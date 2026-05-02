@@ -1,0 +1,78 @@
+// SQLite 备选方案
+// 使用方法: 将此文件复制为 schema.prisma，然后运行 prisma generate
+// 或运行: npm run db:use-sqlite
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              Int       @id @default(autoincrement())
+  username        String    @unique
+  email           String    @unique
+  password        String
+  role            String    @default("user")
+  drawingPoints   Int       @default(10) @map("drawing_points")
+  creationCount   Int       @default(0) @map("creation_count")
+  lastCheckinDate DateTime? @map("last_checkin_date")
+  checkinCount    Int       @default(0) @map("checkin_count")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  creations  Creation[]
+  apiConfig  UserApiConfig?
+
+  @@map("users")
+}
+
+model Creation {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  prompt    String?
+  imageUrl  String   @map("image_url")
+  model     String?
+  size      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("creations")
+}
+
+model Inspiration {
+  id        Int      @id @default(autoincrement())
+  url       String
+  prompt    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("inspirations")
+}
+
+model Announcement {
+  id          Int      @id @default(autoincrement())
+  content     String
+  isImportant Boolean  @default(false) @map("is_important")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("announcements")
+}
+
+model UserApiConfig {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @unique @map("user_id")
+  apiKey     String   @map("api_key")
+  isActive   Boolean  @default(true) @map("is_active")
+  usageCount Int      @default(0) @map("usage_count")
+  apiBaseUrl String?  @map("api_base_url")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_api_config")
+}

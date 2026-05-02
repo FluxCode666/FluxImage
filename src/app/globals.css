@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --primary: 263.4 70% 50.4%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 263.4 70% 50.4%;
+    --radius: 0.5rem;
+  }
+}
+
+/* ===== 自定义主题变量 ===== */
+[data-theme="dark"] {
+  --nb-bg: #09090b;
+  --nb-panel: rgba(24, 24, 27, 0.8);
+  --nb-card: rgba(39, 39, 42, 0.6);
+  --nb-border: rgba(255, 255, 255, 0.08);
+  --nb-text: #f4f4f5;
+  --nb-text-secondary: #a1a1aa;
+  --nb-text-muted: #71717a;
+  --nb-input-bg: rgba(39, 39, 42, 0.6);
+  --nb-hover: rgba(59, 130, 246, 0.1);
+  --nb-overlay: rgba(0, 0, 0, 0.6);
+  --nb-scrollbar: rgba(161, 161, 170, 0.3);
+  --nb-modal-bg: rgba(24, 24, 27, 0.95);
+  --nb-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --nb-panel-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+  --nb-panel-radius: 24px;
+  --nb-radius-lg: 20px;
+  --nb-radius-md: 16px;
+  --nb-radius-sm: 12px;
+  --nb-active-bg: rgba(59, 130, 246, 0.15);
+  --nb-active-color: #3b82f6;
+  --nb-inactive-color: var(--nb-text-secondary);
+  --nb-avatar-bg: #374151;
+  --nb-avatar-color: #ffffff;
+  --nb-btn-primary: linear-gradient(135deg, #6366f1, #8b5cf6);
+  --nb-btn-primary-shadow: 0 0 20px rgba(139, 92, 246, 0.15);
+  --nb-tab-active-bg: rgba(59, 130, 246, 0.1);
+  --nb-tab-active-color: #3b82f6;
+  --nb-tag-bg: var(--nb-card);
+}
+
+[data-theme="light"] {
+  --nb-bg: #f2f1ec;
+  --nb-panel: #ffffff;
+  --nb-card: #f7f7f5;
+  --nb-border: rgba(0, 0, 0, 0.06);
+  --nb-text: #1a1a1a;
+  --nb-text-secondary: #555555;
+  --nb-text-muted: #888888;
+  --nb-input-bg: #f4f4f2;
+  --nb-hover: rgba(0, 0, 0, 0.04);
+  --nb-overlay: rgba(0, 0, 0, 0.25);
+  --nb-scrollbar: rgba(0, 0, 0, 0.12);
+  --nb-modal-bg: #ffffff;
+  --nb-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+  --nb-panel-shadow: 0 2px 20px rgba(0, 0, 0, 0.06);
+  --nb-panel-radius: 24px;
+  --nb-radius-lg: 20px;
+  --nb-radius-md: 16px;
+  --nb-radius-sm: 12px;
+  --nb-active-bg: #2a2a2a;
+  --nb-active-color: #ffffff;
+  --nb-inactive-color: #555555;
+  --nb-avatar-bg: #e5e7eb;
+  --nb-avatar-color: #374151;
+  --nb-btn-primary: #1a1a1a;
+  --nb-btn-primary-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  --nb-tab-active-bg: #ffffff;
+  --nb-tab-active-color: #1a1a1a;
+  --nb-tag-bg: #f4f4f2;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--nb-scrollbar); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { opacity: 0.8; }
+
+/* 动画 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.3s ease-out; }
