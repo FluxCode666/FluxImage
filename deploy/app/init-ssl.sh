@@ -42,20 +42,28 @@ http {
 }
 EOF
 
-docker compose -f "$SCRIPT_DIR/docker-compose.yml" run -d --rm \
+# 创建共享 volume（如不存在）
+docker volume create certbot-webroot 2>/dev/null || true
+docker volume create certbot-etc 2>/dev/null || true
+docker volume create certbot-var 2>/dev/null || true
+
+docker run -d --rm \
   --name fluximage-nginx-temp \
   -p 80:80 \
   -v "$TEMP_CONF:/etc/nginx/nginx.conf:ro" \
-  -v fluximage-certbot-webroot:/var/www/certbot \
-  nginx nginx -g 'daemon off;' 2>/dev/null || true
+  -v certbot-webroot:/var/www/certbot \
+  nginx:alpine
 
 # 等待 Nginx 启动
 sleep 3
 
-# 3. 申请证书
+# 3. 申请证书（一次性，不常驻）
 echo "🔐 申请 Let's Encrypt 证书..."
-docker compose -f "$SCRIPT_DIR/docker-compose.yml" run --rm certbot \
-  certbot certonly \
+docker run --rm \
+  -v certbot-etc:/etc/letsencrypt \
+  -v certbot-var:/var/lib/letsencrypt \
+  -v certbot-webroot:/var/www/certbot \
+  certbot/certbot certonly \
     --webroot \
     -w /var/www/certbot \
     -d "$DOMAIN" \

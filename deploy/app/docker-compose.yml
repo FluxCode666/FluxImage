@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${APP_IMAGE:-ghcr.io/duegin/fluximage:latest}
+    image: ${APP_IMAGE:-ghcr.io/fluxcode666/fluximage:latest}
     container_name: fluximage-app
     restart: unless-stopped
     expose:
@@ -47,15 +47,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  certbot:
-    image: certbot/certbot
-    container_name: fluximage-certbot
-    volumes:
-      - certbot-etc:/etc/letsencrypt
-      - certbot-var:/var/lib/letsencrypt
-      - certbot-webroot:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'"
 
 volumes:
   uploads:
