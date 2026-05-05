@@ -9,7 +9,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `${siteConfig.siteName} - ${siteConfig.siteSubtitle}`,
     description: `使用 ${siteConfig.siteName} 创作精美图片，释放你的创意`,
-    icons: { icon: '/favicon.ico' },
+    icons: { icon: '/logo.png' },
   }
 }
 
