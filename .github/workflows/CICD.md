@@ -4,7 +4,7 @@
 
 ## 工作流文件
 
-- `.github/workflows/docker-build.yml`
+- `.github/workflows/deploy-test.yml`
 - `docker-compose.yml`：可直接放到服务器上，并将 `COMPOSE_FILE_PATH` 指向它的绝对路径
 - 触发方式：`workflow_dispatch`
 - 必填输入：`version`
@@ -79,7 +79,7 @@ volumes:
 
 1. 进入 GitHub 仓库页面。
 2. 打开 `Actions`。
-3. 选择 `Build and Deploy Docker Image`。
+3. 选择 `Deploy Test`。
 4. 点击 `Run workflow`。
 5. 填写 `version`，例如 `v2.0.1`。
 6. 选择是否同时打 `latest` 标签。
