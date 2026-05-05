@@ -11,6 +11,7 @@ const MIGRATIONS_DIR = path.join(process.cwd(), 'migrations')
  * - 启动时自动检查并执行未运行的 SQL 迁移文件
  * - 迁移文件放在 migrations/ 目录下，命名格式: V001__description.sql
  * - 使用 _migrations 表记录已执行的迁移和校验和
+ * - 若目标数据库不存在，会自动创建
  */
 export async function runMigrations() {
   const databaseUrl = getDatabaseUrl()
@@ -18,6 +19,9 @@ export async function runMigrations() {
     console.error('❌ [Migrator] 数据库未配置，跳过数据库迁移')
     return
   }
+
+  // 确保目标数据库存在，不存在则自动创建
+  await ensureDatabase(databaseUrl)
 
   const client = new Client({ connectionString: databaseUrl })
 
@@ -52,6 +56,43 @@ export async function runMigrations() {
     throw error
   } finally {
     await client.end()
+  }
+}
+
+/**
+ * 确保目标数据库存在，不存在则自动创建
+ * 通过连接 PostgreSQL 默认的 postgres 库来执行 CREATE DATABASE
+ */
+async function ensureDatabase(databaseUrl: string) {
+  const url = new URL(databaseUrl)
+  const dbName = url.pathname.replace(/^\//, '')
+
+  // 将连接串指向默认的 postgres 库
+  url.pathname = '/postgres'
+  const adminClient = new Client({ connectionString: url.toString() })
+
+  try {
+    await adminClient.connect()
+
+    const result = await adminClient.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [dbName]
+    )
+
+    if (result.rowCount === 0) {
+      // 数据库名用双引号转义，防止特殊字符问题
+      await adminClient.query(`CREATE DATABASE "${dbName.replace(/"/g, '""')}"`)
+      console.log(`✅ [Migrator] 数据库 "${dbName}" 创建成功`)
+    }
+  } catch (error: unknown) {
+    const pgError = error as { code?: string }
+    // 42P04 = database already exists（并发场景下可能出现）
+    if (pgError.code === '42P04') {
+      return
+    }
+    console.error(`⚠️ [Migrator] 自动创建数据库失败（请确认用户有 CREATEDB 权限）:`, error)
+  } finally {
+    await adminClient.end()
   }
 }
 

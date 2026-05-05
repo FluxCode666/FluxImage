@@ -1,4 +1,4 @@
-name: Deploy Test
+name: Deploy Production
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ on:
         default: true
 
 concurrency:
-  group: deploy-test-${{ github.ref }}
+  group: deploy-prod-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -96,7 +96,7 @@ jobs:
     name: Deploy with Docker Compose
     runs-on: ubuntu-latest
     needs: build-and-push
-    environment: test
+    environment: production
     permissions:
       contents: read
       packages: read
@@ -120,7 +120,7 @@ jobs:
           missing=0
           for name in SSH_HOST SSH_USER SSH_PASSWORD COMPOSE_FILE_PATH; do
             if [[ -z "${!name}" ]]; then
-              echo "::error::$name is required. Configure it in the test environment."
+              echo "::error::$name is required. Configure it in the production environment."
               missing=1
             fi
           done

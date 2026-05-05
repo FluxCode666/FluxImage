@@ -4,41 +4,47 @@
 
 ## 工作流文件
 
-- `.github/workflows/deploy-test.yml`
+| 文件 | 工作流名称 | 部署环境 |
+| --- | --- | --- |
+| `.github/workflows/deploy-test.yml` | Deploy Test | `test` |
+| `.github/workflows/deploy-prod.yml` | Deploy Production | `production` |
+
 - `docker-compose.yml`：可直接放到服务器上，并将 `COMPOSE_FILE_PATH` 指向它的绝对路径
 - 触发方式：`workflow_dispatch`
 - 必填输入：`version`
 - 默认镜像仓库：`ghcr.io/<owner>/<repo>:<version>`
-- 默认部署环境：`production`
 
 ## GitHub 环境配置
 
-进入 GitHub 仓库的 `Settings -> Environments -> production`，配置以下内容。
+进入 GitHub 仓库的 `Settings -> Environments`，分别创建 `test` 和 `production` 两个环境，各自配置对应服务器信息。
 
 ### Environment secrets
 
-这些值属于敏感信息，放在 `production` 环境的 Secrets 中：
+以下 Secrets 按环境分别配置（`test` 和 `production` 各配各的）：
 
 | 名称 | 说明 |
 | --- | --- |
 | `SERVER_HOST` | 服务器 IP 或域名 |
 | `SERVER_USERNAME` | SSH 登录账号 |
 | `SERVER_PASSWORD` | SSH 登录密码 |
-| `GHCR_TOKEN` | 可选。服务器拉取私有 GHCR 镜像时使用的 token |
-| `GHCR_USERNAME` | 可选。与 `GHCR_TOKEN` 配套的 GHCR 用户名 |
-| `SSH_KNOWN_HOSTS` | 可选。服务器 SSH host key，配置后会启用严格主机校验 |
 
-如果 GHCR 镜像包是公开的，`GHCR_TOKEN` 和 `GHCR_USERNAME` 可以不配置。私有镜像建议创建一个具备 `read:packages` 权限的 GitHub token。
+以下 Secret 配置在仓库级别（`Settings -> Secrets and variables -> Actions`），两个环境共享：
+
+| 名称 | 说明 |
+| --- | --- |
+| `GHCR_TOKEN` | 可选。服务器拉取私有 GHCR 镜像时使用的 token |
+
+`GHCR_USERNAME` 默认值为 `duegin`，无需额外配置。如果 GHCR 镜像包是公开的，`GHCR_TOKEN` 也可以不配置。私有镜像建议创建一个具备 `read:packages` 权限的 GitHub token。
 
 ### Environment variables
 
-这些值不属于密钥，放在 `production` 环境的 Variables 中：
+这些值不属于密钥，放在对应环境的 Variables 中：
 
-| 名称 | 必填 | 示例 | 说明 |
+| 名称 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `COMPOSE_FILE_PATH` | 是 | `/opt/fluximage/docker-compose.yml` | 服务器上的 Docker Compose 文件绝对路径 |
-| `SERVER_SSH_PORT` | 否 | `22` | SSH 端口，不配置时默认 `22` |
-| `COMPOSE_SERVICE` | 否 | `app` | Compose 服务名，不配置时默认 `app` |
+| `COMPOSE_FILE_PATH` | 是 | — | 服务器上的 Docker Compose 文件绝对路径，例如 `/opt/fluximage/docker-compose.yml` |
+| `SERVER_SSH_PORT` | 否 | `22` | SSH 端口 |
+| `COMPOSE_SERVICE` | 否 | `app` | Compose 服务名 |
 
 ## 服务器准备
 
@@ -79,7 +85,7 @@ volumes:
 
 1. 进入 GitHub 仓库页面。
 2. 打开 `Actions`。
-3. 选择 `Deploy Test`。
+3. 选择 `Deploy Test`（测试环境）或 `Deploy Production`（生产环境）。
 4. 点击 `Run workflow`。
 5. 填写 `version`，例如 `v2.0.1`。
 6. 选择是否同时打 `latest` 标签。
@@ -108,7 +114,7 @@ volumes:
 
 ### 服务器拉取镜像失败
 
-如果镜像是私有 GHCR 包，请确认 `GHCR_USERNAME` 和 `GHCR_TOKEN` 已配置到 `production` 环境 Secrets，且 token 具备 `read:packages` 权限。
+如果镜像是私有 GHCR 包，请确认 `GHCR_USERNAME` 和 `GHCR_TOKEN` 已配置到对应环境（`test` 或 `production`）的 Secrets，且 token 具备 `read:packages` 权限。
 
 ### 找不到 Compose 文件
 

@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${APP_IMAGE:-ghcr.io/your-username/fluximage:latest}
+    image: ${APP_IMAGE:-ghcr.io/duegin/fluximage:latest}
     container_name: fluximage-app
     restart: unless-stopped
     ports:
