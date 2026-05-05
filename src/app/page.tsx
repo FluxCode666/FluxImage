@@ -1,37 +1,170 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
+import { useSiteConfig } from '@/lib/use-site-config'
 
 interface UserInfo {
   id: number; username: string; email: string; drawing_points: number
   creation_count: number; checkin_count: number; can_checkin: boolean; role: string
 }
 interface Creation {
-  id: number; prompt: string; image_url: string; model: string; size: string; created_at: string
+  id: number; prompt: string; image_url: string; model: string; size: string; title?: string | null; category?: string | null; created_at: string
 }
-interface InspirationItem { id: number; url: string; prompt: string | null }
+interface GenerationTask {
+  id: number; status: string; prompt: string | null; model: string | null; size: string | null; quantity: number; created_at: string
+}
+interface InspirationItem { id: number; url: string; prompt: string | null; model?: string | null }
 
 function getToken() { return typeof window !== 'undefined' ? localStorage.getItem('token') : null }
 function authHeaders() { return { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' } }
 
-const MODELS = [
-  { id: 'nano-banana', name: 'Nano Banana', icon: '🍌', desc: '标准模式，生成速度快' },
-  { id: 'nano-banana-hd', name: 'Nano Banana HD', icon: '✨', desc: '高清模式，增强画质' },
-  { id: 'nano-banana-2', name: 'Nano Banana 2.0', icon: '🚀', desc: '最新大模型，极致画质' },
-  { id: 'nano-banana-2-2k', name: 'Nano Banana 2K', icon: '🔷', desc: '2K 超清分辨率' },
-  { id: 'nano-banana-2-4k', name: 'Nano Banana 4K', icon: '💠', desc: '4K 极致细节' },
-  { id: 'gpt-4o-image', name: 'GPT-4o Image', icon: '🌟', desc: 'OpenAI 图像生成' },
-]
+interface ModelOption { id: string; name: string; icon: string; desc: string; points_cost?: number }
 
 const PASTEL_COLORS = ['#F8D7CC', '#D4EDDA', '#E8DEF3', '#FDEBD0', '#D1ECF1', '#F5C6CB']
 
 // CSS var helpers
 const v = (name: string) => `var(--nb-${name})`
 
+// 阶段化提示文案：根据真实 status + 已用时长动态选择，每隔几秒在同组内轮换
+const TASK_TIPS = {
+  pending: ['任务已提交，正在排队…', '正在分配 AI 算力…', '马上为你启动绘画引擎…'],
+  early: ['AI 正在解析你的提示词…', '正在理解创意构思…', '勾勒画面轮廓中…'],
+  mid: ['AI 正在挥洒色彩…', '细节雕琢中…', '光影渲染中…'],
+  late: ['正在精修最后细节…', '即将完成，最后润色中…', '收尾阶段，请稍候…'],
+  long: ['复杂场景需要更多时间…', '画面较精细，正在耐心打磨…', '即将完工，再坚持一下…'],
+  done: ['创作完成！'],
+}
+
+function pickTip(status: string, elapsed: number, tickIdx: number): string {
+  let group: keyof typeof TASK_TIPS
+  if (status === 'completed') group = 'done'
+  else if (status === 'pending') group = 'pending'
+  else if (elapsed < 10) group = 'early'
+  else if (elapsed < 25) group = 'mid'
+  else if (elapsed < 50) group = 'late'
+  else group = 'long'
+  const list = TASK_TIPS[group]
+  return list[tickIdx % list.length]
+}
+
+// 基于真实 status + 已用时长推算进度（不再凭空假装）：
+// - pending: 0% → 12%（缓慢爬升，提示排队中）
+// - processing: 12% → 92%（按经验时长分段映射；超时后渐近 95%）
+// - completed: 100%（瞬间锁定）
+function computeProgress(status: string, elapsed: number): number {
+  if (status === 'completed') return 100
+  if (status === 'failed') return 0
+  if (status === 'pending') {
+    // 排队阶段最多到 12%，避免给用户「快好了」的错觉
+    return Math.min(elapsed * 2.5, 12)
+  }
+  // processing
+  if (elapsed < 6) return 12 + (elapsed / 6) * 23           // 12 → 35
+  if (elapsed < 18) return 35 + ((elapsed - 6) / 12) * 30   // 35 → 65
+  if (elapsed < 35) return 65 + ((elapsed - 18) / 17) * 22  // 65 → 87
+  // 35s 之后渐近 95%，给用户"还在工作但需要更多时间"的诚实反馈
+  return 87 + (1 - Math.exp(-(elapsed - 35) / 25)) * 8
+}
+
+function TaskCard({ task }: { task: GenerationTask; isDark: boolean }) {
+  const [, forceTick] = useState(0)
+  const createdTime = useRef<number>(Date.parse(task.created_at) || Date.now())
+
+  // 用 ref 持有最新 status / created_at，避免重建定时器
+  useEffect(() => {
+    const parsed = Date.parse(task.created_at)
+    if (!Number.isNaN(parsed)) createdTime.current = parsed
+  }, [task.created_at])
+
+  // 每 500ms 重渲染一次（驱动进度数字、文案轮换、计时器）
+  useEffect(() => {
+    const timer = setInterval(() => forceTick(t => t + 1), 500)
+    return () => clearInterval(timer)
+  }, [])
+
+  const elapsed = Math.max(0, (Date.now() - createdTime.current) / 1000)
+  const progress = computeProgress(task.status, elapsed)
+  const tipIdx = Math.floor(elapsed / 4) // 每 4s 轮换一句
+  const tip = pickTip(task.status, elapsed, tipIdx)
+  const isCompleted = task.status === 'completed'
+  const isQueued = task.status === 'pending'
+  const elapsedLabel = elapsed < 60 ? `${Math.floor(elapsed)}s` : `${Math.floor(elapsed / 60)}m${Math.floor(elapsed % 60)}s`
+
+  return (
+    <div className="break-inside-avoid mb-4 overflow-hidden relative"
+      style={{ borderRadius: '16px', background: '#1a1a2e', aspectRatio: '1 / 1.1' }}>
+      {/* 微光扫过动画 */}
+      <div className="absolute inset-0 overflow-hidden" style={{ borderRadius: '16px' }}>
+        <div className="absolute inset-0" style={{
+          background: 'linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(139,92,246,0.12) 50%, rgba(59,130,246,0.08) 100%)',
+        }} />
+        <div className="absolute top-0 left-0 w-full h-full" style={{
+          background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%)',
+          animation: 'shimmer 2.5s ease-in-out infinite',
+        }} />
+      </div>
+      {/* 居中内容 */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center px-4">
+        <div className="relative w-16 h-16 mb-3">
+          {/* 外圈轨道 */}
+          <svg className="w-16 h-16 absolute inset-0" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="28" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="3" />
+            <circle cx="32" cy="32" r="28" fill="none" stroke="url(#taskGrad)" strokeWidth="3"
+              strokeLinecap="round"
+              strokeDasharray={`${progress * 1.76} ${176 - progress * 1.76}`}
+              strokeDashoffset="44"
+              className="transition-all duration-500 ease-out" />
+            <defs>
+              <linearGradient id="taskGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+                <stop stopColor={isCompleted ? '#34D399' : '#818CF8'} />
+                <stop offset="1" stopColor={isCompleted ? '#10B981' : '#6366F1'} />
+              </linearGradient>
+            </defs>
+          </svg>
+          {/* 中心：排队显示动效点点 / 处理中显示百分比 / 完成显示 ✓ */}
+          <div className="absolute inset-0 flex items-center justify-center">
+            {isCompleted ? (
+              <svg className="w-7 h-7 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : isQueued ? (
+              <span className="flex items-center gap-[3px]">
+                <span className="w-1 h-1 rounded-full bg-white/80 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1 h-1 rounded-full bg-white/80 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1 h-1 rounded-full bg-white/80 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </span>
+            ) : (
+              <span className="text-lg font-semibold text-white/90 tabular-nums">
+                {Math.round(progress)}<span className="text-xs text-white/50">%</span>
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="text-[11px] text-white/55 font-medium tracking-wide transition-opacity duration-300">{tip}</p>
+        <p className="text-[10px] text-white/25 mt-1 tabular-nums">已用 {elapsedLabel}{isQueued ? '' : ' · 通常 20-60s'}</p>
+        <p className="text-[10px] text-white/30 mt-3 px-2 text-center line-clamp-2 leading-relaxed">{task.prompt || ''}</p>
+      </div>
+      {/* 底部模型信息 */}
+      <div className="absolute bottom-0 left-0 right-0 px-3 py-2.5 flex items-center justify-between"
+        style={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.4))' }}>
+        <span className="text-[10px] text-white/30 truncate max-w-[60%]">{task.model || ''}</span>
+        {task.quantity > 1 && <span className="text-[10px] text-white/30">×{task.quantity}</span>}
+      </div>
+      <style jsx>{`
+        @keyframes shimmer {
+          0%, 100% { transform: translateX(-100%); }
+          50% { transform: translateX(100%); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 export default function HomePage() {
   const router = useRouter()
+  const { siteName, siteSubtitle } = useSiteConfig()
   const [user, setUser] = useState<UserInfo | null>(null)
   const [prompt, setPrompt] = useState('')
   const [model, setModel] = useState('nano-banana')
@@ -49,17 +182,29 @@ export default function HomePage() {
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [apiBaseUrlInput, setApiBaseUrlInput] = useState('https://api.fengjungpt.com')
   const [hasApiKey, setHasApiKey] = useState(false)
+  const [MODELS, setMODELS] = useState<ModelOption[]>([])
+  const [allowCustomApi, setAllowCustomApi] = useState(true)
   const [showLogoutMenu, setShowLogoutMenu] = useState(false)
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const [showNotice, setShowNotice] = useState(false)
   const [aspectRatio, setAspectRatio] = useState('1:1')
+  const [imageSize, setImageSize] = useState('auto')
   const [mobileTab, setMobileTab] = useState<'create' | 'inspire'>('create')
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [inspCategory, setInspCategory] = useState('')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [currentPage, setCurrentPage] = useState<'create' | 'inspire'>('create')
   const [selectedInspiration, setSelectedInspiration] = useState<InspirationItem | null>(null)
+  const [selectedWork, setSelectedWork] = useState<Creation | null>(null)
+  const [activeTasks, setActiveTasks] = useState<GenerationTask[]>([])
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [inspHasMore, setInspHasMore] = useState(true)
+  const [inspCursor, setInspCursor] = useState<number | null>(null)
+  const [inspLoading, setInspLoading] = useState(false)
+  const inspScrollRef = useRef<HTMLDivElement>(null)
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const saved = localStorage.getItem('theme') as 'dark' | 'light' | null
@@ -80,35 +225,116 @@ export default function HomePage() {
   useEffect(() => {
     const token = getToken()
     if (!token) { router.push('/login'); return }
-    fetchUser(); fetchInspirations(); fetchAnnouncement()
+    fetchUser(); fetchAnnouncement(); fetchModels()
   }, [])
+
+  async function fetchModels() {
+    try {
+      const res = await fetch('/api/models')
+      const data = await res.json()
+      if (data.success && data.data?.length) {
+        setMODELS(data.data)
+        setAllowCustomApi(data.allow_custom_api !== false)
+        if (!data.data.find((m: ModelOption) => m.id === model)) setModel(data.data[0].id)
+      }
+    } catch {}
+  }
 
   async function fetchUser() {
     try { const res = await fetch('/api/user/info', { headers: authHeaders() }); const data = await res.json(); if (data.success) setUser(data.data); else { localStorage.removeItem('token'); router.push('/login') } } catch { localStorage.removeItem('token'); router.push('/login') }
   }
-  const MOCK_INSPIRATIONS: InspirationItem[] = [
-    { id: 1001, url: 'https://picsum.photos/seed/nb1/400/520', prompt: 'A mystical forest at dawn, golden light filtering through ancient trees, ethereal mist, cinematic lighting, ultra detailed' },
-    { id: 1002, url: 'https://picsum.photos/seed/nb2/400/300', prompt: '赛博朋克城市夜景，霓虹灯光倒映在雨水路面，电影级光影' },
-    { id: 1003, url: 'https://picsum.photos/seed/nb3/400/500', prompt: 'Beautiful anime girl with flowing silver hair, cherry blossom petals, soft pink lighting, Studio Ghibli style' },
-    { id: 1004, url: 'https://picsum.photos/seed/nb4/400/350', prompt: '水墨画风格的中国山水，远山如黛，云雾缭绕，留白意境' },
-    { id: 1005, url: 'https://picsum.photos/seed/nb5/400/450', prompt: 'A cozy coffee shop interior, warm autumn afternoon, sunlight through window, watercolor illustration style' },
-    { id: 1006, url: 'https://picsum.photos/seed/nb6/400/380', prompt: '未来太空站全景，巨大星球背景，科幻写实风格，8K 超清' },
-    { id: 1007, url: 'https://picsum.photos/seed/nb7/400/480', prompt: 'Portrait of a medieval knight in golden armor, dramatic lighting, oil painting masterpiece, intricate details' },
-    { id: 1008, url: 'https://picsum.photos/seed/nb8/400/320', prompt: '日式庭院中的锦鲤池塘，红叶纷飞，宁静禅意，摄影级画质' },
-    { id: 1009, url: 'https://picsum.photos/seed/nb9/400/550', prompt: 'Abstract fluid art, vivid neon colors swirling, metallic gold accents, 4K wallpaper' },
-    { id: 1010, url: 'https://picsum.photos/seed/nb10/400/400', prompt: '可爱的柯基犬穿着宇航员服装，在月球表面漫步，卡通 3D 渲染' },
-    { id: 1011, url: 'https://picsum.photos/seed/nb11/400/460', prompt: 'Underwater coral reef scene, tropical fish, bioluminescent jellyfish, crystal clear water, nature photography' },
-    { id: 1012, url: 'https://picsum.photos/seed/nb12/400/340', prompt: '蒸汽朋克风格的飞艇，铜色齿轮机械，夕阳天空，复古科幻' },
-  ]
-  async function fetchInspirations() {
+  async function fetchInspirations(reset = true, search = '', category = '') {
+    if (inspLoading) return
+    setInspLoading(true)
     try {
-      const res = await fetch('/api/image/inspirations'); const data = await res.json()
-      if (data.success && data.data && data.data.length > 0) setInspirations(data.data)
-      else setInspirations(MOCK_INSPIRATIONS)
-    } catch { setInspirations(MOCK_INSPIRATIONS) }
+      const cursor = reset ? 0 : (inspCursor || 0)
+      const params = new URLSearchParams({ limit: '20' })
+      if (cursor > 0) params.set('cursor', String(cursor))
+      if (search) params.set('search', search)
+      if (category) params.set('category', category)
+      const res = await fetch(`/api/image/inspirations?${params}`)
+      const data = await res.json()
+      if (data.success && data.data) {
+        if (reset) {
+          setInspirations(data.data)
+        } else {
+          setInspirations(prev => [...prev, ...data.data])
+        }
+        setInspHasMore(!!data.hasMore)
+        setInspCursor(data.nextCursor ?? null)
+      } else if (reset) {
+        setInspirations([])
+        setInspHasMore(false)
+      }
+    } catch {
+      if (reset) { setInspirations([]); setInspHasMore(false) }
+    }
+    setInspLoading(false)
+  }
+  function loadMoreInspirations() {
+    if (!inspHasMore || inspLoading) return
+    fetchInspirations(false, searchQuery, inspCategory)
   }
   async function fetchWorks() {
     try { const res = await fetch('/api/image/history', { headers: authHeaders() }); const data = await res.json(); if (data.success) setWorks(data.data || []) } catch {}
+  }
+  async function fetchActiveTasks() {
+    try {
+      const res = await fetch('/api/image/tasks', { headers: authHeaders() })
+      const data = await res.json()
+      if (data.success) {
+        setActiveTasks(data.data || [])
+        return data.data || []
+      }
+    } catch {}
+    return []
+  }
+  function startPolling(taskIds: number[]) {
+    stopPolling()
+    if (taskIds.length === 0) return
+    // 已经处理完毕但仍在动画延迟期内的 task，避免重复 toast / fetch
+    const settled = new Set<number>()
+    pollingRef.current = setInterval(async () => {
+      let anyPending = false
+      for (const tid of taskIds) {
+        if (settled.has(tid)) continue
+        try {
+          const res = await fetch(`/api/image/task/${tid}`, { headers: authHeaders() })
+          const data = await res.json()
+          if (data.success) {
+            const t = data.data
+            if (t.status === 'completed') {
+              settled.add(tid)
+              // 先将 UI 状态切到 completed，让 TaskCard 显示 100% + ✓ 完成态
+              setActiveTasks(prev => prev.map(x => x.id === tid ? { ...x, status: 'completed' } : x))
+              toast.success('图片生成完成！')
+              fetchWorks()
+              fetchUser()
+              // 短暂展示完成动画后再从列表中移除
+              setTimeout(() => {
+                setActiveTasks(prev => prev.filter(x => x.id !== tid))
+              }, 900)
+            } else if (t.status === 'failed') {
+              settled.add(tid)
+              toast.error(t.error || '生成失败')
+              setActiveTasks(prev => prev.filter(x => x.id !== tid))
+            } else {
+              // 同步后端真实 status（pending → processing 切换会被前端感知）
+              setActiveTasks(prev => prev.map(x =>
+                x.id === tid && x.status !== t.status ? { ...x, status: t.status } : x
+              ))
+              anyPending = true
+            }
+          } else {
+            anyPending = true
+          }
+        } catch { anyPending = true }
+      }
+      if (!anyPending) stopPolling()
+    }, 3000)
+  }
+  function stopPolling() {
+    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null }
   }
   async function fetchAnnouncement() {
     try { const res = await fetch('/api/image/public/announcement'); const data = await res.json(); if (data.success && data.data) { setAnnouncement(data.data.content); setShowNotice(true) } } catch {}
@@ -128,8 +354,14 @@ export default function HomePage() {
         const res = await fetch('/api/image/edit', { method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: formData }); const data = await res.json()
         if (data.success) { toast.success('生成成功！'); fetchWorks(); fetchUser() } else toast.error(data.error || '生成失败')
       } else {
-        const res = await fetch('/api/image/generate', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, model, quantity }) }); const data = await res.json()
-        if (data.success) { toast.success('生成成功！'); fetchWorks(); fetchUser() } else toast.error(data.error || '生成失败')
+        const sizeParam = (model === 'gpt-image-2' || model === 'gpt-4o-image') && imageSize !== 'auto' ? imageSize : undefined
+        const res = await fetch('/api/image/generate', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, model, quantity, size: sizeParam }) }); const data = await res.json()
+        if (data.success && data.task_id) {
+          toast.success('任务已提交，正在后台生成...')
+          const newTask: GenerationTask = { id: data.task_id, status: 'pending', prompt, model, size: sizeParam || null, quantity: parseInt(quantity) || 1, created_at: new Date().toISOString() }
+          setActiveTasks(prev => [newTask, ...prev])
+          startPolling([...(activeTasks.map(t => t.id)), data.task_id])
+        } else toast.error(data.error || '生成失败')
       }
     } catch { toast.error('请求失败，请重试') }
     setLoading(false)
@@ -150,11 +382,71 @@ export default function HomePage() {
   }
   function removeFile(idx: number) { setUploadedFiles(prev => prev.filter((_, i) => i !== idx)); setPreviewUrls(prev => prev.filter((_, i) => i !== idx)) }
   function handleLogout() { localStorage.clear(); sessionStorage.clear(); router.push('/login') }
+  async function handleDownloadImage(url: string, filename?: string) {
+    try {
+      const res = await fetch(url)
+      const blob = await res.blob()
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename || url.split('/').pop() || 'image.png'
+      a.click()
+      URL.revokeObjectURL(a.href)
+      toast.success('下载已开始')
+    } catch { toast.error('下载失败') }
+  }
+  function handleCopyPrompt(prompt: string | null) {
+    if (!prompt) { toast.error('无提示词可复制'); return }
+    navigator.clipboard.writeText(prompt).then(() => toast.success('提示词已复制')).catch(() => toast.error('复制失败'))
+  }
+  async function handleShareWork(id: number) {
+    try {
+      const res = await fetch('/api/image/share', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ creation_id: id }) })
+      const data = await res.json()
+      if (data.success) toast.success('已分享到灵感社区')
+      else toast.error(data.error || '分享失败')
+    } catch { toast.error('分享失败') }
+  }
   function applyPrompt(p: string | null) { if (p) { setPrompt(p); setCurrentPage('create'); toast.success('已应用提示词') } }
 
-  useEffect(() => { if (currentPage === 'create') fetchWorks() }, [currentPage])
+  // 搜索 debounce：输入 400ms 后触发搜索
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = setTimeout(() => {
+      setInspCursor(null)
+      setInspHasMore(true)
+      fetchInspirations(true, searchQuery, inspCategory)
+    }, 400)
+    return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current) }
+  }, [searchQuery, inspCategory])
 
-  const currentModel = MODELS.find(m => m.id === model) || MODELS[0]
+  // 滚动加载更多
+  const handleInspScroll = useCallback(() => {
+    const el = inspScrollRef.current
+    if (!el || inspLoading || !inspHasMore) return
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+      loadMoreInspirations()
+    }
+  }, [inspLoading, inspHasMore, inspCursor, searchQuery, inspCategory])
+
+  useEffect(() => {
+    const el = inspScrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', handleInspScroll)
+    return () => el.removeEventListener('scroll', handleInspScroll)
+  }, [handleInspScroll])
+
+  useEffect(() => {
+    if (currentPage === 'create') {
+      fetchWorks()
+      // 页面切到创作时，检查是否有未完成的任务并恢复轮询
+      fetchActiveTasks().then((tasks: GenerationTask[]) => {
+        if (tasks.length > 0) startPolling(tasks.map((t: GenerationTask) => t.id))
+      })
+    }
+    return () => stopPolling()
+  }, [currentPage])
+
+  const currentModel = MODELS.find(m => m.id === model) || MODELS[0] || { id: '', name: '加载中...', icon: '⏳', desc: '' }
 
   /* ===== 侧栏按钮定义 ===== */
   type SidebarBtn = { id: string; icon: React.ReactNode; title: string; page?: 'create' | 'inspire'; onClick?: () => void; href?: string }
@@ -182,7 +474,7 @@ export default function HomePage() {
       {/* ===== 左侧图标栏 ===== */}
       <div className="hidden lg:flex w-20 flex-col items-center py-8 shrink-0 z-10 relative transition-all duration-300"
         style={{ background: v('panel'), borderRadius: v('panel-radius'), boxShadow: v('panel-shadow') }}>
-        <div className="mb-8 text-xl">🍌</div>
+        <div className="mb-8 text-[11px] font-black tracking-tight" style={{ color: v('active-color') }}>FI</div>
         <div className="flex flex-col items-center space-y-3 w-full">
           {sidebarButtons.map(btn => {
             const isActive = btn.page === currentPage
@@ -229,8 +521,8 @@ export default function HomePage() {
             <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-thin pt-16 lg:pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h1 className="text-xl font-extrabold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">Nano Banana</h1>
-                  <p className="text-[10px] tracking-widest uppercase" style={{ color: v('text-muted') }}>AI Creative Studio</p>
+                  <h1 className="text-xl font-extrabold bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent break-words">{siteName}</h1>
+                  <p className="text-[10px] tracking-widest uppercase break-words" style={{ color: v('text-muted') }}>{siteSubtitle}</p>
                 </div>
                 <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-600 border border-green-500/20 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>在线
@@ -336,6 +628,23 @@ export default function HomePage() {
                         </select>
                       </div>
                     )}
+                    {(model === 'gpt-image-2' || model === 'gpt-4o-image') && (
+                      <div>
+                        <label className="text-[10px] mb-1 block flex items-center gap-1" style={{ color: v('text-muted') }}>
+                          图片尺寸 <span className="text-purple-500 text-[9px] border border-purple-500/30 px-1 rounded">GPT 模型</span>
+                        </label>
+                        <select value={imageSize} onChange={e => setImageSize(e.target.value)}
+                          className="w-full px-3 py-2 text-xs outline-none"
+                          style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm') }}>
+                          <option value="auto">自动</option>
+                          <option value="1024x1024">方形 1:1</option>
+                          <option value="1024x1536">竖版 3:4</option>
+                          <option value="1024x1792">故事版 9:16</option>
+                          <option value="1536x1024">横版 4:3</option>
+                          <option value="1792x1024">宽屏 16:9</option>
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -352,33 +661,138 @@ export default function HomePage() {
           </div>
 
           {/* 创作页：我的作品（透明背景） */}
-          <div className="hidden lg:flex flex-1 flex-col h-full overflow-hidden transition-all duration-300">
+          <div className="hidden lg:flex flex-1 flex-col h-full overflow-hidden transition-all duration-300" style={{ minWidth: 0 }}>
             <div className="p-6 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
               <h2 className="text-lg font-bold">我的作品</h2>
               <div className="text-xs" style={{ color: v('text-muted') }}>
                 积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 lg:p-10">
+            <div className="flex-1 overflow-y-auto p-6 lg:p-10" onClick={() => setSelectedWork(null)}>
               <div className="columns-3 gap-4">
+                {activeTasks.map(task => (
+                  <TaskCard key={`task-${task.id}`} task={task} isDark={isDark} />
+                ))}
                 {works.length > 0 ? works.map((item, idx) => (
                   <div key={item.id} className="break-inside-avoid mb-4 overflow-hidden group hover:-translate-y-1 transition-all"
                     style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
-                    <div className="relative overflow-hidden">
-                      <img src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700 cursor-zoom-in"
-                        loading="lazy" onClick={() => setLightboxUrl(item.image_url)}
+                    <div className="relative overflow-hidden cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedWork(item) }}>
+                      <img src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
+                        loading="lazy"
                         style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex flex-col justify-end p-4 pointer-events-none">
-                        <p className="text-xs text-gray-100 line-clamp-4 leading-relaxed">{item.prompt || '无提示词'}</p>
-                        <div className="mt-3 flex items-center justify-between text-[10px] text-gray-400 pointer-events-auto">
-                          <span>{item.created_at ? new Date(item.created_at).toLocaleDateString() : ''}</span>
-                          <button onClick={(e) => { e.stopPropagation(); handleDeleteWork(item.id) }} className="text-red-400 hover:text-red-300 px-2 py-1 rounded bg-red-500/10">删除</button>
-                        </div>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
+                        <p className="text-xs text-gray-100 line-clamp-2 leading-relaxed">{item.prompt || '无提示词'}</p>
+                      </div>
+                    </div>
+                    <div className="px-2 pb-2 pt-1 flex items-center justify-between">
+                      <span className="text-[10px] truncate max-w-[50%]" style={{ color: v('text-muted') }}>{item.model || ''}</span>
+                      <div className="flex items-center gap-0.5">
+                        <button title="下载" onClick={(e) => { e.stopPropagation(); handleDownloadImage(item.image_url) }}
+                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        </button>
+                        <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(item.prompt) }}
+                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                        </button>
+                        <button title="分享到社区" onClick={(e) => { e.stopPropagation(); handleShareWork(item.id) }}
+                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                        </button>
+                        <button title="删除" onClick={(e) => { e.stopPropagation(); handleDeleteWork(item.id) }}
+                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-xs text-red-400/60 hover:text-red-400">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
                       </div>
                     </div>
                   </div>
-                )) : <div className="col-span-3 text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>}
+                )) : activeTasks.length === 0 ? <div className="col-span-3 text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div> : null}
               </div>
+            </div>
+          </div>
+
+          {/* 作品详情面板（动画滑入/滑出） */}
+          <div className="hidden lg:flex flex-col shrink-0 h-full overflow-hidden"
+            style={{
+              width: selectedWork ? '384px' : '0px',
+              minWidth: selectedWork ? '384px' : '0px',
+              opacity: selectedWork ? 1 : 0,
+              background: v('panel'),
+              borderRadius: v('panel-radius'),
+              boxShadow: selectedWork ? v('panel-shadow') : 'none',
+              transition: 'width 0.35s cubic-bezier(0.4,0,0.2,1), min-width 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease',
+              pointerEvents: selectedWork ? 'auto' : 'none',
+            }}>
+            <div className="w-96 flex flex-col h-full">
+              <div className="p-5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
+                <h3 className="text-sm font-bold">作品详情</h3>
+                <button onClick={() => setSelectedWork(null)}
+                  className="w-7 h-7 flex items-center justify-center hover:bg-black/5 transition-colors" style={{ borderRadius: '8px', color: v('text-muted') }}>×</button>
+              </div>
+              {selectedWork && (
+                <div className="flex-1 overflow-y-auto p-5 space-y-5">
+                  <div className="overflow-hidden" style={{ borderRadius: v('radius-md'), border: `1px solid ${v('border')}` }}>
+                    <img src={selectedWork.image_url} alt="" className="w-full h-auto cursor-zoom-in" onClick={() => setLightboxUrl(selectedWork.image_url)} />
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>提示词</label>
+                      <div className="p-3 text-sm leading-relaxed" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
+                        {selectedWork.prompt || '无提示词'}
+                      </div>
+                    </div>
+                    <div className="flex gap-4">
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>模型</label>
+                        <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.model || '-'}</div>
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>尺寸</label>
+                        <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.size || '-'}</div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>创建时间</label>
+                      <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.created_at ? new Date(selectedWork.created_at).toLocaleString() : '-'}</div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>操作</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => applyPrompt(selectedWork.prompt)}
+                          className="py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
+                          style={{ background: v('btn-primary'), borderRadius: v('radius-md') }}>
+                          使用提示词
+                        </button>
+                        <button onClick={() => handleCopyPrompt(selectedWork.prompt)}
+                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
+                          style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                          📋 复制提示词
+                        </button>
+                        <button onClick={() => handleDownloadImage(selectedWork.image_url)}
+                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
+                          style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                          ⬇️ 下载图片
+                        </button>
+                        <button onClick={() => handleShareWork(selectedWork.id)}
+                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80 text-green-500"
+                          style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: v('radius-md') }}>
+                          🌐 分享社区
+                        </button>
+                        <button onClick={() => setLightboxUrl(selectedWork.image_url)}
+                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
+                          style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                          🔍 查看大图
+                        </button>
+                        <button onClick={() => { handleDeleteWork(selectedWork.id); setSelectedWork(null) }}
+                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80 text-red-400"
+                          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: v('radius-md') }}>
+                          🗑 删除
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -407,28 +821,33 @@ export default function HomePage() {
               </div>
               {/* 分类标签 */}
               <div className="flex gap-2 flex-wrap">
-                {['全部', '人物', '风景', '动漫', '写实', '抽象'].map((tag, i) => (
-                  <button key={tag}
-                    className="px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5"
-                    style={{
-                      borderRadius: v('radius-sm'),
-                      ...(i === 0
-                        ? { background: v('active-bg'), color: v('active-color'), border: 'none' }
-                        : { color: v('text-muted'), background: v('tag-bg'), border: `1px solid ${v('border')}` }),
-                    }}>
-                    {tag}
-                  </button>
-                ))}
+                {['全部', '人物', '风景', '动漫', '写实', '抽象', '科幻', '美食', '动物', '建筑', '其他'].map(tag => {
+                  const catValue = tag === '全部' ? '' : tag
+                  const isActive = inspCategory === catValue
+                  return (
+                    <button key={tag}
+                      onClick={() => setInspCategory(catValue)}
+                      className="px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5"
+                      style={{
+                        borderRadius: v('radius-sm'),
+                        ...(isActive
+                          ? { background: v('active-bg'), color: v('active-color'), border: 'none' }
+                          : { color: v('text-muted'), background: v('tag-bg'), border: `1px solid ${v('border')}` }),
+                      }}>
+                      {tag}
+                    </button>
+                  )
+                })}
               </div>
             </div>
 
             {/* 灵感瀑布流 */}
-            <div className="flex-1 overflow-y-auto p-6 lg:p-8">
+            <div ref={inspScrollRef} className="flex-1 overflow-y-auto p-6 lg:p-8" onClick={() => setSelectedInspiration(null)}>
               <div className="columns-2 lg:columns-3 xl:columns-4 gap-4">
                 {inspirations.length > 0 ? inspirations.map((item, idx) => {
                   const cardBg = isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length]
                   return (
-                    <div key={item.id} onClick={() => setSelectedInspiration(item)}
+                    <div key={item.id} onClick={(e) => { e.stopPropagation(); setSelectedInspiration(item) }}
                       className="break-inside-avoid mb-4 overflow-hidden cursor-pointer group hover:-translate-y-1 transition-all"
                       style={{ background: cardBg, border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
                       <div className="relative overflow-hidden" style={{ padding: '8px', paddingBottom: 0 }}>
@@ -444,15 +863,26 @@ export default function HomePage() {
                             background: v('hover'),
                             color: v('text-muted'),
                             borderRadius: '6px',
-                          }}>AI 创作</span>
+                          }}>{item.model || 'AI 创作'}</span>
                           <button className="text-[10px] font-bold text-blue-500 hover:text-blue-600 transition-colors"
                             onClick={(e) => { e.stopPropagation(); applyPrompt(item.prompt) }}>使用 →</button>
                         </div>
                       </div>
                     </div>
                   )
-                }) : <div className="col-span-4 text-center text-sm py-20" style={{ color: v('text-muted') }}>暂无灵感图片</div>}
+                }) : <div className="col-span-4 text-center text-sm py-20" style={{ color: v('text-muted') }}>{searchQuery ? '未找到匹配的灵感' : '暂无灵感图片'}</div>}
               </div>
+              {inspLoading && (
+                <div className="flex justify-center py-6">
+                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
+              {!inspLoading && inspHasMore && inspirations.length > 0 && (
+                <div className="text-center py-4 text-xs" style={{ color: v('text-muted') }}>向下滚动加载更多</div>
+              )}
+              {!inspHasMore && inspirations.length > 0 && (
+                <div className="text-center py-4 text-xs" style={{ color: v('text-muted') }}>已加载全部灵感</div>
+              )}
             </div>
           </div>
 
@@ -545,11 +975,13 @@ export default function HomePage() {
                 {user.can_checkin ? '每日签到' : '今日已签到'}
               </button>
               <div className="text-center text-xs mb-4" style={{ color: v('text-muted') }}>签到次数: {user.checkin_count}</div>
-              <div className="flex gap-3">
-                <button onClick={() => { setShowApiKeyModal(true); setShowUserCenter(false) }}
-                  className="flex-1 py-2 border border-blue-500/50 text-blue-500 text-xs" style={{ borderRadius: v('radius-sm') }}>{hasApiKey ? '修改 Key' : '配置 Key'}</button>
-                {hasApiKey && <button onClick={deleteApiKey} className="flex-1 py-2 border border-red-500/50 text-red-500 text-xs" style={{ borderRadius: v('radius-sm') }}>删除 Key</button>}
-              </div>
+              {allowCustomApi && (
+                <div className="flex gap-3">
+                  <button onClick={() => { setShowApiKeyModal(true); setShowUserCenter(false) }}
+                    className="flex-1 py-2 border border-blue-500/50 text-blue-500 text-xs" style={{ borderRadius: v('radius-sm') }}>{hasApiKey ? '修改 Key' : '配置 Key'}</button>
+                  {hasApiKey && <button onClick={deleteApiKey} className="flex-1 py-2 border border-red-500/50 text-red-500 text-xs" style={{ borderRadius: v('radius-sm') }}>删除 Key</button>}
+                </div>
+              )}
             </div>
           </div>
         </div>

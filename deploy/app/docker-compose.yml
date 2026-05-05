@@ -1,0 +1,37 @@
+services:
+  app:
+    image: ${APP_IMAGE:-ghcr.io/your-username/fluximage:latest}
+    container_name: fluximage-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      NEXT_TELEMETRY_DISABLED: "1"
+      LOCAL_FALLBACK_PATH: /app/public/uploads
+    volumes:
+      - uploads:/app/public/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/image/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - fluximage
+
+volumes:
+  uploads:
+
+networks:
+  fluximage:
+    driver: bridge

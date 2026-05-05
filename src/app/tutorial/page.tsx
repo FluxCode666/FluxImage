@@ -5,9 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Lightbulb, Wand2, ImageIcon, Key, Coins } from 'lucide-react'
+import { useSiteConfig } from '@/lib/use-site-config'
 
 export default function TutorialPage() {
   const router = useRouter()
+  const { siteName } = useSiteConfig()
 
   const sections = [
     {
@@ -43,7 +45,7 @@ export default function TutorialPage() {
         <Button variant="ghost" size="icon" onClick={() => router.push('/')}><ArrowLeft className="w-5 h-5" /></Button>
         <div>
           <h1 className="text-2xl font-bold">使用教程</h1>
-          <p className="text-sm text-muted-foreground">了解如何使用 Nano Banana 创作精美图片</p>
+          <p className="text-sm text-muted-foreground">了解如何使用 {siteName} 创作精美图片</p>
         </div>
       </div>
 

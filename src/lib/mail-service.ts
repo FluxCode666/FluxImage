@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer'
+import { getSiteConfig } from './config-service'
 
 const transporter = nodemailer.createTransport({
   host: process.env.MAIL_HOST,
@@ -10,16 +11,33 @@ const transporter = nodemailer.createTransport({
   },
 })
 
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function sanitizeMailName(value: string) {
+  return value.replace(/["\r\n]/g, '').trim() || 'FluxImage'
+}
+
 export async function sendVerificationEmail(toEmail: string, code: string) {
+  const siteConfig = await getSiteConfig()
+  const siteName = sanitizeMailName(siteConfig.siteName)
+  const escapedSiteName = escapeHtml(siteName)
+
   const mailOptions = {
-    from: `"Nano Banana 官方" <${process.env.MAIL_USER}>`,
+    from: `"${siteName} 官方" <${process.env.MAIL_USER}>`,
     to: toEmail,
-    subject: '【Nano Banana】您的注册验证码',
+    subject: `【${siteName}】您的注册验证码`,
     html: `
       <div style="background-color:#f3f4f6; padding: 20px; font-family: sans-serif;">
         <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
           <div style="background: linear-gradient(to right, #8B5CF6, #3B82F6); padding: 20px; text-align: center;">
-            <h1 style="color: #ffffff; margin: 0; font-size: 20px;">Nano Banana</h1>
+            <h1 style="color: #ffffff; margin: 0; font-size: 20px;">${escapedSiteName}</h1>
           </div>
           <div style="padding: 30px; text-align: center; color: #374151;">
             <p style="margin-bottom: 20px; font-size: 16px;">欢迎注册！您的验证码是：</p>

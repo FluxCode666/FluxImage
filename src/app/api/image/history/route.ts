@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { buildPublicUrl } from '@/lib/storage-service'
 
 export async function GET(req: NextRequest) {
   const authResult = authenticateRequest(req)
@@ -12,7 +13,17 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       take: 50,
     })
-    return NextResponse.json({ success: true, data: rows })
+    const data = await Promise.all(rows.map(async r => ({
+      id: r.id,
+      prompt: r.prompt,
+      image_url: await buildPublicUrl(r.imageUrl),
+      model: r.model,
+      size: r.size,
+      title: r.title,
+      category: r.category,
+      created_at: r.createdAt.toISOString(),
+    })))
+    return NextResponse.json({ success: true, data })
   } catch (error) {
     console.error('获取历史错误:', error)
     return NextResponse.json({ success: false, error: '获取历史失败' }, { status: 500 })

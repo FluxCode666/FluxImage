@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
         checkin_count: user.checkinCount,
         last_checkin_date: user.lastCheckinDate,
         can_checkin: canCheckin,
+        role: user.role,
         created_at: user.createdAt,
       },
     })

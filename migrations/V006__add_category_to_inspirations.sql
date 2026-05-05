@@ -1,0 +1,3 @@
+-- 为 inspirations 表添加分类和模型字段
+ALTER TABLE inspirations ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT NULL;
+ALTER TABLE inspirations ADD COLUMN IF NOT EXISTS model VARCHAR(255) DEFAULT NULL;

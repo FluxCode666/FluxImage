@@ -13,6 +13,7 @@ const sharp = require('sharp');
 
 const { pool } = require('../config/database'); 
 const aiService = require('../services/aiService');
+const { uploadFromUrl, buildPublicUrl } = require('../services/qiniuService');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -70,7 +71,8 @@ router.get('/inspirations', async (req, res) => {
     try {
         connection = await pool.getConnection();
         const [rows] = await connection.execute('SELECT * FROM inspirations ORDER BY id DESC LIMIT 20');
-        res.json({ success: true, data: rows });
+        const data = rows.map(r => ({ ...r, url: buildPublicUrl(r.url) }));
+        res.json({ success: true, data });
     } catch (error) {
         res.status(500).json({ success: false, error: '获取灵感失败' });
     } finally { if (connection) connection.release(); }
@@ -136,24 +138,15 @@ router.post('/generate', authenticateToken, async (req, res, next) => {
                 const temporaryImageUrl = result.data?.data?.[0]?.url;
                 if (!temporaryImageUrl) throw new Error('AI无返回图片');
 
-                const fileName = `${Date.now()}-${userId}-${i}.png`;
-                const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
-                if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-                const filePath = path.join(uploadsDir, fileName);
-                const publicUrl = `/uploads/${fileName}`;
+                const key = `images/${Date.now()}-${userId}-${i}.png`;
+                const storedKey = await uploadFromUrl(temporaryImageUrl, key);
 
-                const response = await axios({ url: temporaryImageUrl, responseType: 'stream' });
-                const writer = fs.createWriteStream(filePath);
-                response.data.pipe(writer);
-                await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
+                const sizeToSave = width && height ? `${width}x${height}` : (size || null);
 
-                let actualSize = await getImageDimensions(temporaryImageUrl);
-                const sizeToSave = actualSize || (width && height ? `${width}x${height}` : (size || null));
-
-                const [insertResult] = await connection.execute('INSERT INTO creations (user_id, prompt, image_url, model, size, created_at) VALUES (?, ?, ?, ?, ?, ?)', [userId, prompt, publicUrl, model || null, sizeToSave, new Date()]);
+                const [insertResult] = await connection.execute('INSERT INTO creations (user_id, prompt, image_url, model, size, created_at) VALUES (?, ?, ?, ?, ?, ?)', [userId, prompt, storedKey, model || null, sizeToSave, new Date()]);
 
                 generatedImages.push({
-                    url: publicUrl, prompt: prompt, model: model || null, size: sizeToSave,
+                    url: buildPublicUrl(storedKey), prompt: prompt, model: model || null, size: sizeToSave,
                     id: insertResult.insertId, createdAt: new Date().toISOString()
                 });
             } catch (error) { console.error(`生成第 ${i + 1} 张出错:`, error.message); }
@@ -208,21 +201,12 @@ router.post('/edit', authenticateToken, upload.array('image', 3), async (req, re
         const temporaryImageUrl = result.data?.data?.[0]?.url;
         if (!temporaryImageUrl) return res.status(500).json({ error: '无图片URL' });
 
-        const fileName = `${Date.now()}-${userId}-edit.png`;
-        const uploadsDir = path.join(__dirname, '..', 'public', 'uploads');
-        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-        const filePath = path.join(uploadsDir, fileName);
-        const publicUrl = `/uploads/${fileName}`;
+        const key = `images/${Date.now()}-${userId}-edit.png`;
+        const storedKey = await uploadFromUrl(temporaryImageUrl, key);
 
-        const response = await axios({ url: temporaryImageUrl, responseType: 'stream' });
-        const writer = fs.createWriteStream(filePath);
-        response.data.pipe(writer);
-        await new Promise((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject); });
-
-        let actualSize = await getImageDimensions(temporaryImageUrl);
-        const sizeString = actualSize || (targetWidth && targetHeight ? `${targetWidth}x${targetHeight}` : null);
+        const sizeString = targetWidth && targetHeight ? `${targetWidth}x${targetHeight}` : null;
         
-        await connection.execute('INSERT INTO creations (user_id, prompt, image_url, model, size, created_at) VALUES (?, ?, ?, ?, ?, ?)', [userId, prompt, publicUrl, model || null, sizeString, new Date()]);
+        await connection.execute('INSERT INTO creations (user_id, prompt, image_url, model, size, created_at) VALUES (?, ?, ?, ?, ?, ?)', [userId, prompt, storedKey, model || null, sizeString, new Date()]);
 
         let remainingPoints = currentPoints;
         if (apiKeyInfo.shouldDeductPoints) {
@@ -234,7 +218,7 @@ router.post('/edit', authenticateToken, upload.array('image', 3), async (req, re
 
         res.status(200).json({
             success: true,
-            data: { url: publicUrl, prompt: prompt, model: model || null, size: sizeString, createdAt: new Date().toISOString() },
+            data: { url: buildPublicUrl(storedKey), prompt: prompt, model: model || null, size: sizeString, createdAt: new Date().toISOString() },
             quantity: 1, remaining_points: remainingPoints, used_api_key: apiKeyInfo.isUserKey
         });
 
@@ -246,7 +230,8 @@ router.get('/history', authenticateToken, async (req, res, next) => {
     try {
         connection = await pool.getConnection();
         const [rows] = await connection.execute("SELECT * FROM creations WHERE user_id = ? ORDER BY created_at DESC LIMIT 50", [req.user.id]);
-        res.json({ success: true, data: rows });
+        const data = rows.map(r => ({ ...r, image_url: buildPublicUrl(r.image_url) }));
+        res.json({ success: true, data });
     } catch (error) { next(error); } finally { if (connection) connection.release(); }
 });
 
@@ -256,9 +241,6 @@ router.delete('/delete/:id', authenticateToken, async (req, res, next) => {
         connection = await pool.getConnection();
         const [rows] = await connection.execute('SELECT * FROM creations WHERE id = ? AND user_id = ?', [req.params.id, req.user.id]);
         if (rows.length === 0) return res.status(404).json({ error: '无权删除' });
-
-        const filePath = path.join(__dirname, '..', 'public', rows[0].image_url);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
         await connection.execute('DELETE FROM creations WHERE id = ?', [req.params.id]);
         res.json({ success: true, message: '已删除' });

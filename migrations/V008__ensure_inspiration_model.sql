@@ -1,0 +1,3 @@
+-- 补齐灵感社区字段，兼容已执行过旧版 V006 的数据库
+ALTER TABLE inspirations ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT NULL;
+ALTER TABLE inspirations ADD COLUMN IF NOT EXISTS model VARCHAR(255) DEFAULT NULL;

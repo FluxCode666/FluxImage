@@ -1,0 +1,110 @@
+networks:
+  seaweedfs-net:
+
+services:
+  master:
+    image: chrislusf/seaweedfs:3.66
+    container_name: seaweedfs-master
+    command: >
+      master
+      -ip=master
+      -mdir=/data
+      -port=9333
+    volumes:
+      - ./data/master:/data
+    ports:
+      - "9333:9333"
+    networks:
+      - seaweedfs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9333/"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  volume1:
+    image: chrislusf/seaweedfs:3.66
+    container_name: seaweedfs-volume1
+    command: >
+      volume
+      -mserver=master:9333
+      -ip=volume1
+      -dir=/data
+      -max=0
+    volumes:
+      - ./data/volume1:/data
+    depends_on:
+      master:
+        condition: service_healthy
+    networks:
+      - seaweedfs-net
+    restart: unless-stopped
+
+  volume2:
+    image: chrislusf/seaweedfs:3.66
+    container_name: seaweedfs-volume2
+    command: >
+      volume
+      -mserver=master:9333
+      -ip=volume2
+      -dir=/data
+      -max=0
+    volumes:
+      - ./data/volume2:/data
+    depends_on:
+      master:
+        condition: service_healthy
+    networks:
+      - seaweedfs-net
+    restart: unless-stopped
+
+  filer:
+    image: chrislusf/seaweedfs:3.66
+    container_name: seaweedfs-filer
+    command: >
+      filer
+      -master=master:9333
+      -ip=0.0.0.0
+      -defaultStoreDir=/data
+    volumes:
+      - ./data/filer:/data
+    ports:
+      - "8888:8888"
+    depends_on:
+      master:
+        condition: service_healthy
+      volume1:
+        condition: service_started
+      volume2:
+        condition: service_started
+    networks:
+      - seaweedfs-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8888/"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  s3:
+    image: chrislusf/seaweedfs:3.66
+    container_name: seaweedfs-s3
+    command: >
+      s3
+      -filer=filer:8888
+      -port=8333
+      -ip=0.0.0.0
+      -config=/config/s3.json
+    volumes:
+      - ./s3.json:/config/s3.json
+    ports:
+      - "8333:8333"
+    depends_on:
+      filer:
+        condition: service_healthy
+    networks:
+      - seaweedfs-net
+    restart: unless-stopped

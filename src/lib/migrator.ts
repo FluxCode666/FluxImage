@@ -2,6 +2,7 @@ import { Client } from 'pg'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
+import { getDatabaseUrl } from './database'
 
 const MIGRATIONS_DIR = path.join(process.cwd(), 'migrations')
 
@@ -12,9 +13,9 @@ const MIGRATIONS_DIR = path.join(process.cwd(), 'migrations')
  * - 使用 _migrations 表记录已执行的迁移和校验和
  */
 export async function runMigrations() {
-  const databaseUrl = process.env.DATABASE_URL
+  const databaseUrl = getDatabaseUrl()
   if (!databaseUrl) {
-    console.error('❌ [Migrator] DATABASE_URL 未配置，跳过数据库迁移')
+    console.error('❌ [Migrator] 数据库未配置，跳过数据库迁移')
     return
   }
 

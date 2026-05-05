@@ -1,8 +1,8 @@
-# 🍌 Nano BananaAI (纳米香蕉绘图站)
+# FluxImage
 
 ![GitHub stars](https://img.shields.io/github/stars/pili1121/Nano-Banana?style=flat-square)![GitHub forks](https://img.shields.io/github/forks/pili1121/Nano-Banana?style=flat-square)![GitHub issues](https://img.shields.io/github/issues/pili1121/Nano-Banana?style=flat-square)
 
-**Nano BananaAI** 是一个轻量级、功能强大的 AI 绘图 Web 应用，一个有趣的实验性项目——其核心代码完全由 AI 编写生成。
+**FluxImage** 是一个轻量级、功能强大的 AI 绘图 Web 应用，一个有趣的实验性项目——其核心代码完全由 AI 编写生成。
 
 项目支持文生图、图生图及图片二次编辑功能，并配备了完整的用户系统和超级管理员后台，非常适合新手学习和快速部署。
 
@@ -69,11 +69,11 @@ cp .env.example .env
 ```
 
 需要配置的关键项：
-- `DATABASE_URL` - PostgreSQL 连接串（或 SQLite 文件路径）
-- `REDIS_URL` - Redis 连接地址
+- `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` / `DB_TIMEZONE` - PostgreSQL 数据库配置
+- `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` - Redis 配置
 - `JWT_SECRET` - JWT 密钥
-- `AI_API_BASE_URL` / `AI_API_KEY` - AI 绘图 API
 - `MAIL_*` - SMTP 邮件配置
+- AI API 和 OSS 存储配置请在管理后台「系统配置」中设置
 
 ### 4. 初始化数据库
 

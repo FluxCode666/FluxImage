@@ -19,8 +19,9 @@ model User {
   checkinCount    Int       @default(0) @map("checkin_count")
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  creations  Creation[]
-  apiConfig  UserApiConfig?
+  creations       Creation[]
+  apiConfig       UserApiConfig?
+  generationTasks GenerationTask[]
 
   @@map("users")
 }
@@ -32,6 +33,8 @@ model Creation {
   imageUrl  String   @map("image_url") @db.VarChar(255)
   model     String?  @db.VarChar(255)
   size      String?  @db.VarChar(255)
+  title     String?  @db.VarChar(100)
+  category  String?  @db.VarChar(50)
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -43,6 +46,8 @@ model Inspiration {
   id        Int      @id @default(autoincrement())
   url       String   @db.VarChar(1000)
   prompt    String?  @db.Text
+  category  String?  @db.VarChar(50)
+  model     String?  @db.VarChar(255)
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("inspirations")
@@ -71,4 +76,49 @@ model UserApiConfig {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_api_config")
+}
+
+model SystemConfig {
+  id          Int      @id @default(autoincrement())
+  configKey   String   @unique @map("config_key") @db.VarChar(100)
+  configValue String?  @map("config_value") @db.Text
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("system_config")
+}
+
+model ModelConfig {
+  id          Int      @id @default(autoincrement())
+  modelId     String   @unique @map("model_id") @db.VarChar(100)
+  displayName String   @map("display_name") @db.VarChar(100)
+  icon        String   @default("🤖") @db.VarChar(20)
+  description String   @default("") @db.VarChar(255)
+  apiBaseUrl  String?  @map("api_base_url") @db.VarChar(500)
+  apiKey      String?  @map("api_key") @db.VarChar(500)
+  isEnabled   Boolean  @default(true) @map("is_enabled")
+  sortOrder   Int      @default(0) @map("sort_order")
+  pointsCost  Int      @default(1) @map("points_cost")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("model_config")
+}
+
+model GenerationTask {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  status      String    @default("pending") @db.VarChar(20)
+  prompt      String?   @db.Text
+  model       String?   @db.VarChar(255)
+  size        String?   @db.VarChar(50)
+  quantity    Int       @default(1)
+  result      String?   @db.Text
+  error       String?   @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("generation_tasks")
 }

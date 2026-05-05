@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { aiService } from '@/lib/ai-service'
-import axios from 'axios'
-import fs from 'fs'
-import path from 'path'
+import { getApiConfigForModel, isCustomApiAllowed } from '@/lib/config-service'
 import sharp from 'sharp'
+import { uploadFromUrl, buildPublicUrl } from '@/lib/storage-service'
 
 export async function POST(req: NextRequest) {
   const authResult = authenticateRequest(req)
@@ -41,12 +40,21 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ success: false, error: '用户不存在' }, { status: 404 })
 
     const currentPoints = user.drawingPoints
-    const userConfig = await prisma.userApiConfig.findUnique({ where: { userId } })
-    let apiKeyInfo
-    if (userConfig) {
-      apiKeyInfo = { key: userConfig.apiKey, baseUrl: userConfig.apiBaseUrl || process.env.AI_API_BASE_URL, isUserKey: true, shouldDeductPoints: false }
-    } else if (currentPoints >= 1) {
-      apiKeyInfo = { key: process.env.AI_API_KEY!, baseUrl: process.env.AI_API_BASE_URL!, isUserKey: false, shouldDeductPoints: true }
+    const modelId = model || 'gpt-4o-image'
+    let apiKeyInfo: { key: string; baseUrl: string; isUserKey: boolean; shouldDeductPoints: boolean } | undefined
+
+    const customAllowed = await isCustomApiAllowed()
+    if (customAllowed) {
+      const userConfig = await prisma.userApiConfig.findUnique({ where: { userId } })
+      if (userConfig) {
+        apiKeyInfo = { key: userConfig.apiKey, baseUrl: userConfig.apiBaseUrl || '', isUserKey: true, shouldDeductPoints: false }
+      }
+    }
+    if (!apiKeyInfo && currentPoints >= 1) {
+      const sysConfig = await getApiConfigForModel(modelId)
+      if (sysConfig) {
+        apiKeyInfo = { key: sysConfig.apiKey, baseUrl: sysConfig.baseUrl, isUserKey: false, shouldDeductPoints: true }
+      }
     }
     if (!apiKeyInfo) return NextResponse.json({ success: false, error: '积分不足' }, { status: 400 })
 
@@ -65,21 +73,15 @@ export async function POST(req: NextRequest) {
     const temporaryImageUrl = result.data?.data?.[0]?.url
     if (!temporaryImageUrl) return NextResponse.json({ error: '无图片URL' }, { status: 500 })
 
-    const fileName = `${Date.now()}-${userId}-edit.png`
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads')
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
-    const filePath = path.join(uploadsDir, fileName)
-    const publicUrl = `/uploads/${fileName}`
-
-    const response = await axios({ url: temporaryImageUrl, responseType: 'stream' })
-    const writer = fs.createWriteStream(filePath)
-    response.data.pipe(writer)
-    await new Promise<void>((resolve, reject) => { writer.on('finish', resolve); writer.on('error', reject) })
+    const key = `images/${Date.now()}-${userId}-edit.png`
+    const storedKey = await uploadFromUrl(temporaryImageUrl, key)
 
     const sizeString = targetWidth && targetHeight ? `${targetWidth}x${targetHeight}` : null
 
+    const titleCategory = await aiService.generateTitleAndCategory(prompt, apiKeyInfo.key, apiKeyInfo.baseUrl)
+
     await prisma.creation.create({
-      data: { userId, prompt, imageUrl: publicUrl, model: model || null, size: sizeString, createdAt: new Date() },
+      data: { userId, prompt, imageUrl: storedKey, model: model || null, size: sizeString, title: titleCategory.title, category: titleCategory.category, createdAt: new Date() },
     })
 
     let remainingPoints = currentPoints
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: { url: publicUrl, prompt, model: model || null, size: sizeString, createdAt: new Date().toISOString() },
+      data: { url: await buildPublicUrl(storedKey), prompt, model: model || null, size: sizeString, createdAt: new Date().toISOString() },
       quantity: 1, remaining_points: remainingPoints, used_api_key: apiKeyInfo.isUserKey,
     })
   } catch (error) {

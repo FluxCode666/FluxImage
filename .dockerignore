@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.md
+.vscode
+.idea
+deploy
+public/uploads/*
+!public/uploads/.gitkeep
+prisma/database.sqlite

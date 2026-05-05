@@ -36,7 +36,7 @@ let isGenerating = false;
 // 2. 应用初始化 (Initialization)
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('✅ 页面加载完成，开始初始化 Nano Banana...');
+    console.log('✅ 页面加载完成，开始初始化 FluxImage...');
     
     try {
         // 1. 检查用户是否登录

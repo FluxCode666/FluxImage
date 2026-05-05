@@ -9,9 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { Mail, Lock, User, Sparkles, ArrowRight } from 'lucide-react'
+import { useSiteConfig } from '@/lib/use-site-config'
 
 export default function LoginPage() {
   const router = useRouter()
+  const { siteName, siteSubtitle } = useSiteConfig()
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [regUsername, setRegUsername] = useState('')
@@ -91,12 +93,12 @@ export default function LoginPage() {
       <div className="w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
-            <span className="text-4xl">🍌</span>
+            <Sparkles className="w-8 h-8 text-purple-400" />
             <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
-              Nano Banana
+              {siteName}
             </h1>
           </div>
-          <p className="text-muted-foreground">AI 绘图创作平台</p>
+          <p className="text-muted-foreground">{siteSubtitle}</p>
         </div>
 
         <Card className="bg-card/80 backdrop-blur border-border/50">

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { isCustomApiAllowed } from '@/lib/config-service'
 
 export async function GET(req: NextRequest) {
   const authResult = authenticateRequest(req)
@@ -38,6 +39,11 @@ export async function POST(req: NextRequest) {
   if (authResult instanceof NextResponse) return authResult
 
   try {
+    const allowed = await isCustomApiAllowed()
+    if (!allowed) {
+      return NextResponse.json({ success: false, error: '管理员已关闭自定义 API 功能' }, { status: 403 })
+    }
+
     const { api_key, api_base_url } = await req.json()
     if (!api_key || api_key.length < 10) {
       return NextResponse.json({ success: false, error: 'API Key格式不正确' }, { status: 400 })
