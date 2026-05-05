@@ -13,15 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "🔧 域名: $DOMAIN"
 echo "🔧 邮箱: $EMAIL"
 
-# 1. 替换 nginx.conf 中的域名占位符
-if grep -q '${DOMAIN}' "$SCRIPT_DIR/nginx.conf"; then
-  sed -i "s/\${DOMAIN}/$DOMAIN/g" "$SCRIPT_DIR/nginx.conf"
-  echo "✅ nginx.conf 域名已替换为 $DOMAIN"
-else
-  echo "ℹ️  nginx.conf 中未发现占位符，跳过替换"
-fi
-
-# 2. 先用 HTTP-only 模式启动 Nginx（注释掉 SSL 配置）
+# 1. 先用 HTTP-only 模式启动 Nginx 用于 ACME 验证
 echo "🔄 临时启动 Nginx（仅 HTTP）用于 ACME 验证..."
 TEMP_CONF="$SCRIPT_DIR/nginx-temp.conf"
 cat > "$TEMP_CONF" <<'EOF'
