@@ -5,11 +5,13 @@ import { useEffect, useState } from 'react'
 export interface ClientSiteConfig {
   siteName: string
   siteSubtitle: string
+  promptMaxLength: number
 }
 
 export const DEFAULT_CLIENT_SITE_CONFIG: ClientSiteConfig = {
   siteName: 'FluxImage',
   siteSubtitle: 'AI Creative Studio',
+  promptMaxLength: 5000,
 }
 
 export function useSiteConfig(updateTitle = true): ClientSiteConfig {
@@ -27,6 +29,7 @@ export function useSiteConfig(updateTitle = true): ClientSiteConfig {
         setConfig({
           siteName: data.data?.site_name?.trim() || DEFAULT_CLIENT_SITE_CONFIG.siteName,
           siteSubtitle: data.data?.site_subtitle?.trim() || DEFAULT_CLIENT_SITE_CONFIG.siteSubtitle,
+          promptMaxLength: parseInt(data.data?.prompt_max_length) || DEFAULT_CLIENT_SITE_CONFIG.promptMaxLength,
         })
       } catch {
         if (mounted) setConfig(DEFAULT_CLIENT_SITE_CONFIG)

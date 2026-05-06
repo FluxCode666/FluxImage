@@ -908,6 +908,11 @@ export default function AdminPage() {
                 </div>
                 <div style={{ borderTop: `1px solid ${v('border')}`, paddingTop: '16px' }} className="space-y-4">
                   <div>
+                    <Lbl>提示词字数限制</Lbl>
+                    <input type="number" value={sysConfig.prompt_max_length || '5000'} onChange={e => setSysConfig(c => ({ ...c, prompt_max_length: e.target.value }))} placeholder="5000" style={{ ...iStyle, width: '128px' }} />
+                    <p className="text-[10px] mt-1" style={{ color: v('text-muted') }}>用户输入提示词的最大字符数，默认 5000</p>
+                  </div>
+                  <div>
                     <Lbl>请求超时时间（秒）</Lbl>
                     <input type="number" value={sysConfig.ai_timeout || '180'} onChange={e => setSysConfig(c => ({ ...c, ai_timeout: e.target.value }))} placeholder="180" style={{ ...iStyle, width: '128px' }} />
                     <p className="text-[10px] mt-1" style={{ color: v('text-muted') }}>AI 生图请求的最大等待时间，默认 180 秒</p>

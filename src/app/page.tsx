@@ -164,7 +164,7 @@ function TaskCard({ task }: { task: GenerationTask; isDark: boolean }) {
 
 export default function HomePage() {
   const router = useRouter()
-  const { siteName, siteSubtitle } = useSiteConfig()
+  const { siteName, siteSubtitle, promptMaxLength } = useSiteConfig()
   const [user, setUser] = useState<UserInfo | null>(null)
   const [prompt, setPrompt] = useState('')
   const [model, setModel] = useState('nano-banana')
@@ -642,8 +642,8 @@ export default function HomePage() {
                   <textarea value={prompt} onChange={e => setPrompt(e.target.value)}
                     className="w-full h-full p-3 resize-none text-sm leading-relaxed focus:outline-none focus:border-blue-500 transition-colors"
                     style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-md') }}
-                    placeholder="描述你想生成的画面..." maxLength={2000} />
-                  <div className="absolute bottom-2 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/2000</div>
+                    placeholder="描述你想生成的画面..." maxLength={promptMaxLength} />
+                  <div className="absolute bottom-2 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/{promptMaxLength}</div>
                 </div>
               </div>
 

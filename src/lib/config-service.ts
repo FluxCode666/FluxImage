@@ -25,6 +25,7 @@ export function invalidateConfigCache() {
 
 export const DEFAULT_SITE_NAME = 'FluxImage'
 export const DEFAULT_SITE_SUBTITLE = 'AI Creative Studio'
+export const DEFAULT_PROMPT_MAX_LENGTH = 5000
 
 // ── 系统全局配置 ──────────────────────────────────
 
@@ -57,21 +58,24 @@ export async function getAllSystemConfig(): Promise<Record<string, string>> {
   return result
 }
 
-export async function getSiteConfig(): Promise<{ siteName: string; siteSubtitle: string }> {
+export async function getSiteConfig(): Promise<{ siteName: string; siteSubtitle: string; promptMaxLength: number }> {
   try {
-    const [siteName, siteSubtitle] = await Promise.all([
+    const [siteName, siteSubtitle, promptMaxLength] = await Promise.all([
       getSystemConfig('site_name'),
       getSystemConfig('site_subtitle'),
+      getSystemConfig('prompt_max_length'),
     ])
 
     return {
       siteName: siteName?.trim() || DEFAULT_SITE_NAME,
       siteSubtitle: siteSubtitle?.trim() || DEFAULT_SITE_SUBTITLE,
+      promptMaxLength: parseInt(promptMaxLength || '') || DEFAULT_PROMPT_MAX_LENGTH,
     }
   } catch {
     return {
       siteName: DEFAULT_SITE_NAME,
       siteSubtitle: DEFAULT_SITE_SUBTITLE,
+      promptMaxLength: DEFAULT_PROMPT_MAX_LENGTH,
     }
   }
 }

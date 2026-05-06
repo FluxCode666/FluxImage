@@ -39,6 +39,7 @@ export async function PUT(req: NextRequest) {
       'seaweedfs_master_url', 'seaweedfs_filer_url', 'seaweedfs_domain', 'seaweedfs_auth_user', 'seaweedfs_auth_password',
       'default_points_cost',
       'site_name', 'site_subtitle',
+      'prompt_max_length',
     ]
 
     for (const key of allowedKeys) {
