@@ -234,7 +234,16 @@ function consumeLoop() {
           }
         }
       } catch (e) {
-        console.error('❌ [Stream] 消费异常:', (e as Error).message)
+        const msg = (e as Error).message || ''
+        console.error('❌ [Stream] 消费异常:', msg)
+        if (msg.includes('NOGROUP')) {
+          try {
+            await ensureConsumerGroup()
+            console.log('🔄 [Stream] 已重新创建消费者组，继续消费')
+          } catch (groupErr) {
+            console.error('❌ [Stream] 重建消费者组失败:', (groupErr as Error).message)
+          }
+        }
         await new Promise(r => setTimeout(r, 5000))
       }
     }
