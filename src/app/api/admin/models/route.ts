@@ -19,8 +19,6 @@ export async function GET(req: NextRequest) {
         display_name: m.displayName,
         icon: m.icon,
         description: m.description,
-        api_base_url: m.apiBaseUrl,
-        api_key: m.apiKey,
         is_enabled: m.isEnabled,
         sort_order: m.sortOrder,
         points_cost: m.pointsCost,
@@ -39,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (adminCheck) return adminCheck
 
   try {
-    const { model_id, display_name, icon, description, api_base_url, api_key, is_enabled, sort_order, points_cost } = await req.json()
+    const { model_id, display_name, icon, description, is_enabled, sort_order, points_cost } = await req.json()
 
     if (!model_id || !display_name) {
       return NextResponse.json({ success: false, error: '模型ID和名称不能为空' }, { status: 400 })
@@ -56,8 +54,6 @@ export async function POST(req: NextRequest) {
         displayName: display_name,
         icon: icon || '🤖',
         description: description || '',
-        apiBaseUrl: api_base_url || null,
-        apiKey: api_key || null,
         isEnabled: is_enabled !== false,
         sortOrder: sort_order ?? 0,
         pointsCost: points_cost ?? 1,

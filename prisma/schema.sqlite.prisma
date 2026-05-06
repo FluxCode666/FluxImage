@@ -18,13 +18,15 @@ model User {
   password        String
   role            String    @default("user")
   drawingPoints   Int       @default(10) @map("drawing_points")
+  checkinPoints   Int       @default(0) @map("checkin_points")
   creationCount   Int       @default(0) @map("creation_count")
   lastCheckinDate DateTime? @map("last_checkin_date")
   checkinCount    Int       @default(0) @map("checkin_count")
   createdAt       DateTime  @default(now()) @map("created_at")
 
-  creations  Creation[]
-  apiConfig  UserApiConfig?
+  creations       Creation[]
+  apiConfig       UserApiConfig?
+  generationTasks GenerationTask[]
 
   @@map("users")
 }
@@ -79,4 +81,61 @@ model UserApiConfig {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_api_config")
+}
+
+model SystemConfig {
+  id          Int      @id @default(autoincrement())
+  configKey   String   @unique @map("config_key")
+  configValue String?  @map("config_value")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("system_config")
+}
+
+model ModelConfig {
+  id          Int      @id @default(autoincrement())
+  modelId     String   @unique @map("model_id")
+  displayName String   @map("display_name")
+  icon        String   @default("🤖")
+  description String   @default("")
+  isEnabled   Boolean  @default(true) @map("is_enabled")
+  sortOrder   Int      @default(0) @map("sort_order")
+  pointsCost  Int      @default(1) @map("points_cost")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("model_config")
+}
+
+model ApiProvider {
+  id              Int      @id @default(autoincrement())
+  name            String
+  apiBaseUrl      String   @map("api_base_url")
+  apiKey          String   @map("api_key")
+  priority        Int      @default(0)
+  isEnabled       Boolean  @default(true) @map("is_enabled")
+  supportedModels String   @default("[]") @map("supported_models")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  @@map("api_providers")
+}
+
+model GenerationTask {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  status      String    @default("pending")
+  prompt      String?
+  model       String?
+  size        String?
+  quantity    Int       @default(1)
+  result      String?
+  error       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("generation_tasks")
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { getSystemConfig } from '@/lib/config-service'
 
 export async function POST(req: NextRequest) {
   const authResult = authenticateRequest(req)
@@ -25,7 +26,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: '今天已经签到过了，请明天再来！' }, { status: 400 })
     }
 
-    const newPoints = user.drawingPoints + 10
+    const checkinPointsStr = await getSystemConfig('checkin_points')
+    const checkinQuota = parseInt(checkinPointsStr || '10') || 10
+
+    const pointsToAdd = Math.max(0, checkinQuota - user.checkinPoints)
     const newCheckinCount = user.checkinCount + 1
     const today = new Date()
     const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate())
@@ -33,17 +37,20 @@ export async function POST(req: NextRequest) {
     await prisma.user.update({
       where: { id: authResult.id },
       data: {
-        drawingPoints: newPoints,
+        drawingPoints: { increment: pointsToAdd },
+        checkinPoints: Math.min(user.checkinPoints + pointsToAdd, checkinQuota),
         checkinCount: newCheckinCount,
         lastCheckinDate: todayDate,
       },
     })
 
+    const newPoints = user.drawingPoints + pointsToAdd
+
     return NextResponse.json({
       success: true,
-      message: '签到成功！获得10积分',
+      message: pointsToAdd > 0 ? `签到成功！获得${pointsToAdd}积分` : '签到成功！积分已满',
       data: {
-        points_earned: 10,
+        points_earned: pointsToAdd,
         total_points: newPoints,
         checkin_count: newCheckinCount,
         last_checkin_date: todayDate.toISOString().split('T')[0],

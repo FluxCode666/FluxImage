@@ -2,37 +2,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { aiService } from '@/lib/ai-service'
-import { getApiConfigForModel, isCustomApiAllowed } from '@/lib/config-service'
+import { isCustomApiAllowed, getProvidersForModel, ProviderInfo } from '@/lib/config-service'
 import { uploadFromUrl } from '@/lib/storage-service'
 
-async function getApiKeyToUse(userId: number, currentPoints: number, requiredPoints: number, modelId: string) {
+type ApiKeyInfo =
+  | { type: 'user'; key: string; baseUrl: string; shouldDeductPoints: false }
+  | { type: 'providers'; providers: ProviderInfo[]; shouldDeductPoints: true }
+
+async function getApiKeyToUse(userId: number, currentPoints: number, requiredPoints: number, modelId: string): Promise<ApiKeyInfo | null> {
   // 检查是否允许用户自定义 API
   const customAllowed = await isCustomApiAllowed()
   if (customAllowed) {
     try {
       const userConfig = await prisma.userApiConfig.findUnique({ where: { userId } })
       if (userConfig) {
-        return {
-          key: userConfig.apiKey,
-          baseUrl: userConfig.apiBaseUrl || '',
-          isUserKey: true,
-          shouldDeductPoints: false,
-        }
+        return { type: 'user', key: userConfig.apiKey, baseUrl: userConfig.apiBaseUrl || '', shouldDeductPoints: false }
       }
     } catch (error) {
       console.error('获取用户API Key失败:', error)
     }
   }
-  // 使用系统配置（模型级 > 全局）
+  // 使用供应商调度
   if (currentPoints >= requiredPoints) {
-    const sysConfig = await getApiConfigForModel(modelId)
-    if (!sysConfig) return null
-    return {
-      key: sysConfig.apiKey,
-      baseUrl: sysConfig.baseUrl,
-      isUserKey: false,
-      shouldDeductPoints: true,
-    }
+    const providers = await getProvidersForModel(modelId)
+    if (providers.length === 0) return null
+    return { type: 'providers', providers, shouldDeductPoints: true }
   }
   return null
 }
@@ -47,7 +41,7 @@ async function executeGenerationTask(
   width: string | undefined,
   height: string | undefined,
   qty: number,
-  apiKeyInfo: { key: string; baseUrl: string; isUserKey: boolean; shouldDeductPoints: boolean },
+  apiKeyInfo: ApiKeyInfo,
 ) {
   try {
     await prisma.generationTask.update({ where: { id: taskId }, data: { status: 'processing' } })
@@ -56,10 +50,19 @@ async function executeGenerationTask(
     const generatedImages = []
     for (let i = 0; i < qty; i++) {
       try {
-        const result = await aiService.generateImage({
-          prompt, model, size, width, height,
-          apiKey: apiKeyInfo.key, baseUrl: apiKeyInfo.baseUrl,
-        })
+        let result
+        if (apiKeyInfo.type === 'user') {
+          result = await aiService.generateImage({
+            prompt, model, size, width, height,
+            apiKey: apiKeyInfo.key, baseUrl: apiKeyInfo.baseUrl,
+          })
+        } else {
+          result = await aiService.generateImageWithFallback({
+            prompt, model, size, width, height,
+            providers: apiKeyInfo.providers,
+          })
+        }
+        if (!result.success) throw new Error(result.error || 'AI生成失败')
         const temporaryImageUrl = result.data?.data?.[0]?.url
         if (!temporaryImageUrl) throw new Error('AI无返回图片')
 
@@ -70,7 +73,11 @@ async function executeGenerationTask(
 
         // 首张图片时生成标题和分类（后续复用）
         if (i === 0 && !titleCategory) {
-          titleCategory = await aiService.generateTitleAndCategory(prompt, apiKeyInfo.key, apiKeyInfo.baseUrl)
+          if (apiKeyInfo.type === 'user') {
+            titleCategory = await aiService.generateTitleAndCategory(prompt, apiKeyInfo.key, apiKeyInfo.baseUrl)
+          } else {
+            titleCategory = await aiService.generateTitleAndCategoryWithFallback(prompt, apiKeyInfo.providers)
+          }
         }
 
         const creation = await prisma.creation.create({
@@ -96,9 +103,16 @@ async function executeGenerationTask(
 
     // 扣积分
     if (apiKeyInfo.shouldDeductPoints) {
+      const cost = generatedImages.length
+      const currentUser = await prisma.user.findUnique({ where: { id: userId }, select: { checkinPoints: true } })
+      const checkinDeduct = Math.min(currentUser?.checkinPoints || 0, cost)
       await prisma.user.update({
         where: { id: userId },
-        data: { drawingPoints: { decrement: generatedImages.length }, creationCount: { increment: generatedImages.length } },
+        data: {
+          drawingPoints: { decrement: cost },
+          checkinPoints: { decrement: checkinDeduct },
+          creationCount: { increment: cost },
+        },
       })
     }
 
@@ -138,7 +152,7 @@ export async function POST(req: NextRequest) {
 
     const currentPoints = user.drawingPoints
     const apiKeyInfo = await getApiKeyToUse(userId, currentPoints, qty, model || 'gpt-4o-image')
-    if (!apiKeyInfo) return NextResponse.json({ success: false, error: '积分不足' }, { status: 400 })
+    if (!apiKeyInfo) return NextResponse.json({ success: false, error: '积分不足或无可用供应商' }, { status: 400 })
 
     // 创建任务记录
     const task = await prisma.generationTask.create({

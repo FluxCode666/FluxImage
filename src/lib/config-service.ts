@@ -91,11 +91,21 @@ export interface ModelInfo {
   displayName: string
   icon: string
   description: string
-  apiBaseUrl: string | null
-  apiKey: string | null
   isEnabled: boolean
   sortOrder: number
   pointsCost: number
+}
+
+// ── 供应商配置 ──────────────────────────────────────
+
+export interface ProviderInfo {
+  id: number
+  name: string
+  apiBaseUrl: string
+  apiKey: string
+  priority: number
+  isEnabled: boolean
+  supportedModels: string[] // modelId 数组，["*"] 表示支持所有
 }
 
 export async function getEnabledModels(): Promise<ModelInfo[]> {
@@ -113,8 +123,6 @@ export async function getEnabledModels(): Promise<ModelInfo[]> {
     displayName: r.displayName,
     icon: r.icon,
     description: r.description,
-    apiBaseUrl: r.apiBaseUrl,
-    apiKey: r.apiKey,
     isEnabled: r.isEnabled,
     sortOrder: r.sortOrder,
     pointsCost: r.pointsCost,
@@ -132,8 +140,6 @@ export async function getAllModels(): Promise<ModelInfo[]> {
     displayName: r.displayName,
     icon: r.icon,
     description: r.description,
-    apiBaseUrl: r.apiBaseUrl,
-    apiKey: r.apiKey,
     isEnabled: r.isEnabled,
     sortOrder: r.sortOrder,
     pointsCost: r.pointsCost,
@@ -149,22 +155,58 @@ export async function getModelConfig(modelId: string): Promise<ModelInfo | null>
     displayName: row.displayName,
     icon: row.icon,
     description: row.description,
-    apiBaseUrl: row.apiBaseUrl,
-    apiKey: row.apiKey,
     isEnabled: row.isEnabled,
     sortOrder: row.sortOrder,
     pointsCost: row.pointsCost,
   }
 }
 
-// ── 获取模型最终 API 配置（模型级 > 全局默认） ────────
+// ── 供应商查询 ──────────────────────────────────────
+
+function parseProviderRow(r: { id: number; name: string; apiBaseUrl: string; apiKey: string; priority: number; isEnabled: boolean; supportedModels: string; createdAt: Date; updatedAt: Date }): ProviderInfo {
+  let models: string[] = []
+  try { models = JSON.parse(r.supportedModels) } catch { models = [] }
+  return {
+    id: r.id,
+    name: r.name,
+    apiBaseUrl: r.apiBaseUrl,
+    apiKey: r.apiKey,
+    priority: r.priority,
+    isEnabled: r.isEnabled,
+    supportedModels: models,
+  }
+}
+
+export async function getAllProviders(): Promise<ProviderInfo[]> {
+  const rows = await prisma.apiProvider.findMany({ orderBy: { priority: 'desc' } })
+  return rows.map(parseProviderRow)
+}
+
+export async function getEnabledProviders(): Promise<ProviderInfo[]> {
+  const cached = getCached<ProviderInfo[]>('providers:enabled')
+  if (cached) return cached
+
+  const rows = await prisma.apiProvider.findMany({
+    where: { isEnabled: true },
+    orderBy: { priority: 'desc' },
+  })
+  const providers = rows.map(parseProviderRow)
+  setCache('providers:enabled', providers)
+  return providers
+}
+
+/** 获取支持指定模型的已启用供应商列表（按 priority 降序） */
+export async function getProvidersForModel(modelId: string): Promise<ProviderInfo[]> {
+  const all = await getEnabledProviders()
+  return all.filter(p =>
+    p.supportedModels.includes('*') || p.supportedModels.includes(modelId)
+  )
+}
+
+// ── 获取模型的 API 配置（通过供应商调度） ────────
 
 export async function getApiConfigForModel(modelId: string): Promise<{ apiKey: string; baseUrl: string } | null> {
-  const model = await getModelConfig(modelId)
-
-  const apiKey = model?.apiKey || await getSystemConfig('default_api_key')
-  const baseUrl = model?.apiBaseUrl || await getSystemConfig('default_api_base_url')
-
-  if (!apiKey || !baseUrl) return null
-  return { apiKey, baseUrl }
+  const providers = await getProvidersForModel(modelId)
+  if (providers.length === 0) return null
+  return { apiKey: providers[0].apiKey, baseUrl: providers[0].apiBaseUrl }
 }

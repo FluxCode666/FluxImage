@@ -1,6 +1,6 @@
 import axios from 'axios'
 import FormData from 'form-data'
-import { getEnabledModels, getSystemConfig } from './config-service'
+import { getEnabledModels, getSystemConfig, ProviderInfo } from './config-service'
 
 class AIService {
   async getAvailableModels() {
@@ -205,6 +205,81 @@ class AIService {
       console.error('生成标题/分类失败:', (error as Error).message)
     }
     return fallback
+  }
+
+  /** 带 fallback 的文生图：按优先级逐个尝试供应商 */
+  async generateImageWithFallback(params: {
+    prompt: string
+    model?: string
+    size?: string
+    width?: number | string
+    height?: number | string
+    n?: number
+    quality?: string
+    style?: string
+    responseFormat?: string
+    providers: ProviderInfo[]
+  }) {
+    const { providers, ...rest } = params
+    const errors: string[] = []
+    for (const provider of providers) {
+      console.log(`🔄 尝试供应商: ${provider.name} (priority=${provider.priority})`)
+      const result = await this.generateImage({
+        ...rest,
+        apiKey: provider.apiKey,
+        baseUrl: provider.apiBaseUrl,
+      })
+      if (result.success) {
+        return { ...result, usedProvider: provider.name }
+      }
+      const errMsg = `[${provider.name}] ${result.error}`
+      errors.push(errMsg)
+      console.warn(`⚠️ 供应商 ${provider.name} 失败: ${result.error}，尝试下一个...`)
+    }
+    return { success: false as const, error: `所有供应商均失败: ${errors.join('; ')}` }
+  }
+
+  /** 带 fallback 的图生图：按优先级逐个尝试供应商 */
+  async editImageWithFallback(params: {
+    prompt: string
+    images: { buffer: Buffer; originalname: string }[]
+    model?: string
+    size?: string
+    width?: number | string | null
+    height?: number | string | null
+    n?: number
+    responseFormat?: string
+    providers: ProviderInfo[]
+  }) {
+    const { providers, ...rest } = params
+    const errors: string[] = []
+    for (const provider of providers) {
+      console.log(`🔄 尝试供应商: ${provider.name} (priority=${provider.priority})`)
+      const result = await this.editImage({
+        ...rest,
+        apiKey: provider.apiKey,
+        baseUrl: provider.apiBaseUrl,
+      })
+      if (result.success) {
+        return { ...result, usedProvider: provider.name }
+      }
+      const errMsg = `[${provider.name}] ${result.error}`
+      errors.push(errMsg)
+      console.warn(`⚠️ 供应商 ${provider.name} 失败: ${result.error}，尝试下一个...`)
+    }
+    return { success: false as const, error: `所有供应商均失败: ${errors.join('; ')}` }
+  }
+
+  /** 带 fallback 的标题分类生成 */
+  async generateTitleAndCategoryWithFallback(prompt: string, providers: ProviderInfo[]): Promise<{ title: string; category: string }> {
+    for (const provider of providers) {
+      try {
+        return await this.generateTitleAndCategory(prompt, provider.apiKey, provider.apiBaseUrl)
+      } catch {
+        console.warn(`标题生成供应商 ${provider.name} 失败，尝试下一个...`)
+      }
+    }
+    return { title: prompt.slice(0, 30), category: '其他' }
   }
 
   private formatError(error: unknown): string {

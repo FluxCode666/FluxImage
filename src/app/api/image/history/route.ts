@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
       id: r.id,
       prompt: r.prompt,
       image_url: await buildPublicUrl(r.imageUrl),
+      image_key: r.imageUrl,
       model: r.model,
       size: r.size,
       title: r.title,

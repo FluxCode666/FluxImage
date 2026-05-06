@@ -10,7 +10,7 @@ interface UserInfo {
   creation_count: number; checkin_count: number; can_checkin: boolean; role: string
 }
 interface Creation {
-  id: number; prompt: string; image_url: string; model: string; size: string; title?: string | null; category?: string | null; created_at: string
+  id: number; prompt: string; image_url: string; image_key?: string; model: string; size: string; title?: string | null; category?: string | null; created_at: string
 }
 interface GenerationTask {
   id: number; status: string; prompt: string | null; model: string | null; size: string | null; quantity: number; created_at: string
@@ -176,6 +176,7 @@ export default function HomePage() {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
+  const [referenceKeys, setReferenceKeys] = useState<(string | null)[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showUserCenter, setShowUserCenter] = useState(false)
   const [showApiKeyModal, setShowApiKeyModal] = useState(false)
@@ -194,7 +195,17 @@ export default function HomePage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [inspCategory, setInspCategory] = useState('')
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [themeMode, setThemeMode] = useState<'system' | 'dark' | 'light'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('themeMode') as 'system' | 'dark' | 'light') || 'system'
+    }
+    return 'system'
+  })
+  const resolveTheme = (mode: 'system' | 'dark' | 'light'): 'dark' | 'light' => {
+    if (mode === 'system') return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    return mode
+  }
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => resolveTheme(themeMode))
   const [currentPage, setCurrentPage] = useState<'create' | 'inspire'>('create')
   const [selectedInspiration, setSelectedInspiration] = useState<InspirationItem | null>(null)
   const [selectedWork, setSelectedWork] = useState<Creation | null>(null)
@@ -205,19 +216,24 @@ export default function HomePage() {
   const [inspLoading, setInspLoading] = useState(false)
   const inspScrollRef = useRef<HTMLDivElement>(null)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const logoutMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme') as 'dark' | 'light' | null
-    const t = saved || 'dark'
-    setTheme(t)
-    document.documentElement.setAttribute('data-theme', t)
-  }, [])
-
-  function toggleTheme() {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    localStorage.setItem('theme', next)
-    document.documentElement.setAttribute('data-theme', next)
+    document.documentElement.className = theme
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+  useEffect(() => {
+    if (themeMode !== 'system') return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setTheme(e.matches ? 'dark' : 'light')
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [themeMode])
+  function applyThemeMode(mode: 'system' | 'dark' | 'light') {
+    setThemeMode(mode)
+    localStorage.setItem('themeMode', mode)
+    localStorage.removeItem('theme')
+    setTheme(resolveTheme(mode))
   }
 
   const isDark = theme === 'dark'
@@ -227,6 +243,14 @@ export default function HomePage() {
     if (!token) { router.push('/login'); return }
     fetchUser(); fetchAnnouncement(); fetchModels()
   }, [])
+  useEffect(() => {
+    if (!showLogoutMenu) return
+    const handler = (e: MouseEvent) => {
+      if (logoutMenuRef.current && !logoutMenuRef.current.contains(e.target as Node)) setShowLogoutMenu(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showLogoutMenu])
 
   async function fetchModels() {
     try {
@@ -349,10 +373,19 @@ export default function HomePage() {
     if (!prompt.trim()) { toast.error('请输入提示词'); return }
     setLoading(true)
     try {
-      if (uploadedFiles.length > 0) {
-        const formData = new FormData(); formData.append('prompt', prompt); formData.append('model', model); formData.append('image', uploadedFiles[0])
+      if (previewUrls.length > 0) {
+        const formData = new FormData(); formData.append('prompt', prompt); formData.append('model', model)
+        referenceKeys.forEach((key, i) => {
+          if (key) { formData.append('image_key', key) }
+          else if (uploadedFiles[i]) { formData.append('image', uploadedFiles[i]) }
+        })
         const res = await fetch('/api/image/edit', { method: 'POST', headers: { Authorization: `Bearer ${getToken()}` }, body: formData }); const data = await res.json()
-        if (data.success) { toast.success('生成成功！'); fetchWorks(); fetchUser() } else toast.error(data.error || '生成失败')
+        if (data.success && data.task_id) {
+          toast.success('任务已提交，正在后台生成...')
+          const newTask: GenerationTask = { id: data.task_id, status: 'pending', prompt, model, size: null, quantity: 1, created_at: new Date().toISOString() }
+          setActiveTasks(prev => [newTask, ...prev])
+          startPolling([...(activeTasks.map(t => t.id)), data.task_id])
+        } else toast.error(data.error || '生成失败')
       } else {
         const sizeParam = (model === 'gpt-image-2' || model === 'gpt-4o-image') && imageSize !== 'auto' ? imageSize : undefined
         const res = await fetch('/api/image/generate', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ prompt, model, quantity, size: sizeParam }) }); const data = await res.json()
@@ -377,10 +410,17 @@ export default function HomePage() {
     try { const res = await fetch('/api/user/api-keys', { method: 'DELETE', headers: authHeaders() }); if (res.ok) { toast.success('已删除'); setHasApiKey(false) } } catch {}
   }
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []); if (files.length + uploadedFiles.length > 3) { toast.error('最多上传3张'); return }
-    setUploadedFiles(prev => [...prev, ...files]); setPreviewUrls(prev => [...prev, ...files.map(f => URL.createObjectURL(f))])
+    const files = Array.from(e.target.files || []); if (files.length + previewUrls.length > 3) { toast.error('最多上传3张'); return }
+    setUploadedFiles(prev => [...prev, ...files]); setPreviewUrls(prev => [...prev, ...files.map(f => URL.createObjectURL(f))]); setReferenceKeys(prev => [...prev, ...files.map(() => null)])
   }
-  function removeFile(idx: number) { setUploadedFiles(prev => prev.filter((_, i) => i !== idx)); setPreviewUrls(prev => prev.filter((_, i) => i !== idx)) }
+  function removeFile(idx: number) { setUploadedFiles(prev => prev.filter((_, i) => i !== idx)); setPreviewUrls(prev => prev.filter((_, i) => i !== idx)); setReferenceKeys(prev => prev.filter((_, i) => i !== idx)) }
+  function useAsReference(imageUrl: string, imageKey?: string) {
+    if (previewUrls.length >= 3) { toast.error('参考图最多3张'); return }
+    setPreviewUrls(prev => [...prev, imageUrl])
+    setReferenceKeys(prev => [...prev, imageKey || null])
+    setUploadedFiles(prev => [...prev]) // keep length in sync placeholder
+    toast.success('已添加为参考图')
+  }
   function handleLogout() { localStorage.clear(); sessionStorage.clear(); router.push('/login') }
   async function handleDownloadImage(url: string, filename?: string) {
     try {
@@ -454,11 +494,6 @@ export default function HomePage() {
     { id: 'create', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>, title: '创作', page: 'create' },
     { id: 'inspire', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>, title: '灵感', page: 'inspire' },
     { id: 'notice', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>, title: '公告', onClick: () => setShowNotice(true) },
-    { id: 'api', icon: <span className="text-[11px] font-bold">API</span>, title: 'API', href: 'https://api.fengjungpt.com' },
-    { id: 'theme', icon: isDark
-      ? <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
-      : <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>,
-      title: '切换主题', onClick: toggleTheme },
   ]
 
   if (!user) return (
@@ -494,17 +529,31 @@ export default function HomePage() {
             </button>
           )}
         </div>
-        <div className="relative mt-auto pt-6 w-full flex justify-center" style={{ borderTop: `1px solid ${v('border')}` }}>
+        <div ref={logoutMenuRef} className="relative mt-auto pt-6 w-full flex justify-center" style={{ borderTop: `1px solid ${v('border')}` }}>
           <button onClick={() => { setShowLogoutMenu(!showLogoutMenu); setShowUserCenter(false) }}
             className="w-10 h-10 rounded-full overflow-hidden border-2 border-transparent hover:border-blue-500 transition-all flex items-center justify-center"
             style={{ background: v('avatar-bg') }}>
             <svg className="w-5 h-5" style={{ color: v('avatar-color') }} fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
           </button>
           {showLogoutMenu && (
-            <div className="absolute bottom-0 left-16 mb-2 w-36 shadow-xl z-50 overflow-hidden"
+            <div className="absolute bottom-0 left-16 mb-2 w-44 shadow-xl z-50 overflow-hidden"
               style={{ background: v('modal-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md') }}>
               <button onClick={() => { setShowUserCenter(true); setShowLogoutMenu(false); fetchApiKeyStatus() }}
                 className="w-full px-4 py-3 text-xs text-left hover:bg-blue-500/10 text-blue-500">👤 个人中心</button>
+              <div style={{ borderTop: `1px solid ${v('border')}`, padding: '8px 12px' }}>
+                <p className="text-[10px] font-medium mb-2" style={{ color: v('text-muted') }}>主题设置</p>
+                <div className="flex gap-1">
+                  {([['system', '💻', '系统'], ['light', '☀️', '明亮'], ['dark', '🌙', '暗黑']] as const).map(([mode, icon, label]) => (
+                    <button key={mode} onClick={() => applyThemeMode(mode)}
+                      className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] transition-all"
+                      style={themeMode === mode
+                        ? { background: v('active-bg'), color: v('active-color'), fontWeight: 600 }
+                        : { color: v('text-muted') }}>
+                      <span className="text-sm">{icon}</span>{label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button onClick={handleLogout}
                 className="w-full px-4 py-3 text-xs text-left hover:bg-red-500/10 text-red-500" style={{ borderTop: `1px solid ${v('border')}` }}>🚪 退出</button>
             </div>
@@ -694,6 +743,10 @@ export default function HomePage() {
                         <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(item.prompt) }}
                           className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                        </button>
+                        <button title="用作参考图" onClick={(e) => { e.stopPropagation(); useAsReference(item.image_url, item.image_key) }}
+                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                         </button>
                         <button title="分享到社区" onClick={(e) => { e.stopPropagation(); handleShareWork(item.id) }}
                           className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>

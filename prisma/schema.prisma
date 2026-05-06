@@ -15,6 +15,7 @@ model User {
   password        String    @db.VarChar(255)
   role            String    @default("user") @db.VarChar(20)
   drawingPoints   Int       @default(10) @map("drawing_points")
+  checkinPoints   Int       @default(0) @map("checkin_points")
   creationCount   Int       @default(0) @map("creation_count")
   lastCheckinDate DateTime? @map("last_checkin_date") @db.Date
   checkinCount    Int       @default(0) @map("checkin_count")
@@ -94,8 +95,6 @@ model ModelConfig {
   displayName String   @map("display_name") @db.VarChar(100)
   icon        String   @default("🤖") @db.VarChar(20)
   description String   @default("") @db.VarChar(255)
-  apiBaseUrl  String?  @map("api_base_url") @db.VarChar(500)
-  apiKey      String?  @map("api_key") @db.VarChar(500)
   isEnabled   Boolean  @default(true) @map("is_enabled")
   sortOrder   Int      @default(0) @map("sort_order")
   pointsCost  Int      @default(1) @map("points_cost")
@@ -103,6 +102,20 @@ model ModelConfig {
   updatedAt   DateTime @default(now()) @map("updated_at")
 
   @@map("model_config")
+}
+
+model ApiProvider {
+  id              Int      @id @default(autoincrement())
+  name            String   @db.VarChar(100)
+  apiBaseUrl      String   @map("api_base_url") @db.VarChar(500)
+  apiKey          String   @map("api_key") @db.VarChar(500)
+  priority        Int      @default(0)
+  isEnabled       Boolean  @default(true) @map("is_enabled")
+  supportedModels String   @default("[]") @map("supported_models") @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  @@map("api_providers")
 }
 
 model GenerationTask {

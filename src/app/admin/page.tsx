@@ -38,7 +38,11 @@ interface InspirationItem { id: number; url: string; prompt: string | null }
 interface AnnouncementItem { id: number; content: string; isActive: boolean; isImportant: boolean; createdAt: string }
 interface ModelItem {
   id: number; model_id: string; display_name: string; icon: string; description: string
-  api_base_url: string | null; api_key: string | null; is_enabled: boolean; sort_order: number; points_cost: number
+  is_enabled: boolean; sort_order: number; points_cost: number
+}
+interface ProviderItem {
+  id: number; name: string; api_base_url: string; api_key: string
+  priority: number; is_enabled: boolean; supported_models: string[]
 }
 
 export default function AdminPage() {
@@ -65,22 +69,42 @@ export default function AdminPage() {
   const [editingModel, setEditingModel] = useState<ModelItem | null>(null)
   const [showAddModel, setShowAddModel] = useState(false)
   const [editedCosts, setEditedCosts] = useState<Record<number, number>>({})
-  const [newModel, setNewModel] = useState({ model_id: '', display_name: '', icon: '🤖', description: '', api_base_url: '', api_key: '', points_cost: 1 })
+  const [newModel, setNewModel] = useState({ model_id: '', display_name: '', icon: '🤖', description: '', points_cost: 1 })
+
+  // 供应商
+  const [providers, setProviders] = useState<ProviderItem[]>([])
+  const [showAddProvider, setShowAddProvider] = useState(false)
+  const [editingProvider, setEditingProvider] = useState<ProviderItem | null>(null)
+  const [newProvider, setNewProvider] = useState({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] as string[] })
 
   const [activeTab, setActiveTab] = useState('users')
   const [settingsTab, setSettingsTab] = useState('qiniu')
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [themeMode, setThemeMode] = useState<'system' | 'dark' | 'light'>(() => {
+    if (typeof window !== 'undefined') return (localStorage.getItem('themeMode') as 'system' | 'dark' | 'light') || 'system'
+    return 'system'
+  })
+  const resolveTheme = (mode: 'system' | 'dark' | 'light'): 'dark' | 'light' => {
+    if (mode === 'system') return typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    return mode
+  }
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => resolveTheme(themeMode))
   useEffect(() => {
-    const saved = localStorage.getItem('theme') as 'dark' | 'light' | null
-    if (saved) { setTheme(saved); document.documentElement.setAttribute('data-theme', saved) }
-  }, [])
-  const toggleTheme = () => {
-    const next = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next); localStorage.setItem('theme', next); document.documentElement.setAttribute('data-theme', next)
+    document.documentElement.className = theme
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
+  useEffect(() => {
+    if (themeMode !== 'system') return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setTheme(e.matches ? 'dark' : 'light')
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [themeMode])
+  function applyThemeMode(mode: 'system' | 'dark' | 'light') {
+    setThemeMode(mode); localStorage.setItem('themeMode', mode); localStorage.removeItem('theme'); setTheme(resolveTheme(mode))
   }
   const isDark = theme === 'dark'
 
-  useEffect(() => { fetchUsers(); fetchInspirations(); fetchAnnouncements(); fetchSysConfig(); fetchModels() }, [])
+  useEffect(() => { fetchUsers(); fetchInspirations(); fetchAnnouncements(); fetchSysConfig(); fetchModels(); fetchProviders() }, [])
 
   async function fetchUsers() {
     try {
@@ -253,10 +277,64 @@ export default function AdminPage() {
       if (data.success) {
         toast.success('模型添加成功')
         fetchModels()
-        setNewModel({ model_id: '', display_name: '', icon: '🤖', description: '', api_base_url: '', api_key: '', points_cost: 1 })
+        setNewModel({ model_id: '', display_name: '', icon: '🤖', description: '', points_cost: 1 })
         setShowAddModel(false)
       } else toast.error(data.error)
     } catch { toast.error('添加失败') }
+  }
+
+  // ── 供应商管理 ──
+  async function fetchProviders() {
+    try {
+      const res = await fetch('/api/admin/providers', { headers: authHeaders() })
+      const data = await res.json()
+      if (data.success) setProviders(data.data)
+    } catch {}
+  }
+  async function handleAddProvider() {
+    if (!newProvider.name || !newProvider.api_base_url || !newProvider.api_key) { toast.error('名称、API 域名和 API Key 不能为空'); return }
+    try {
+      const res = await fetch('/api/admin/providers', {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify(newProvider),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast.success('供应商添加成功')
+        fetchProviders()
+        setNewProvider({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] })
+        setShowAddProvider(false)
+      } else toast.error(data.error)
+    } catch { toast.error('添加失败') }
+  }
+  async function handleUpdateProvider(p: ProviderItem) {
+    try {
+      const res = await fetch(`/api/admin/providers/${p.id}`, {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify(p),
+      })
+      const data = await res.json()
+      if (data.success) { toast.success('已更新'); fetchProviders(); setEditingProvider(null) }
+      else toast.error(data.error)
+    } catch { toast.error('更新失败') }
+  }
+  async function handleDeleteProvider(id: number) {
+    if (!confirm('确定删除此供应商？')) return
+    try {
+      const res = await fetch(`/api/admin/providers/${id}`, { method: 'DELETE', headers: authHeaders() })
+      const data = await res.json()
+      if (data.success) { toast.success('已删除'); setProviders(ps => ps.filter(x => x.id !== id)) }
+    } catch { toast.error('删除失败') }
+  }
+  async function handleToggleProviderEnabled(p: ProviderItem) {
+    try {
+      const res = await fetch(`/api/admin/providers/${p.id}`, {
+        method: 'PUT', headers: authHeaders(),
+        body: JSON.stringify({ is_enabled: !p.is_enabled }),
+      })
+      const data = await res.json()
+      if (data.success) fetchProviders()
+    } catch {}
   }
   async function handleUpdateModel(m: ModelItem) {
     try {
@@ -349,9 +427,15 @@ export default function AdminPage() {
           ))}
         </div>
         <div className="mt-auto pt-6 w-full flex flex-col items-center gap-3" style={{ borderTop: `1px solid ${v('border')}` }}>
-          <button onClick={toggleTheme} title="切换主题" className="w-10 h-10 flex items-center justify-center rounded-xl hover:opacity-80 transition-all" style={{ color: v('inactive-color') }}>
-            {isDark ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            {([['system', '💻'], ['light', '☀️'], ['dark', '🌙']] as const).map(([mode, icon]) => (
+              <button key={mode} onClick={() => applyThemeMode(mode)} title={mode === 'system' ? '跟随系统' : mode === 'light' ? '明亮' : '暗黑'}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-sm transition-all hover:opacity-80"
+                style={themeMode === mode ? { background: v('active-bg') } : { color: v('inactive-color') }}>
+                {icon}
+              </button>
+            ))}
+          </div>
           <button onClick={() => router.push('/')} title="返回首页" className="w-10 h-10 flex items-center justify-center rounded-xl hover:opacity-80 transition-all" style={{ color: v('inactive-color') }}>
             <ArrowLeft className="w-[18px] h-[18px]" />
           </button>
@@ -707,26 +791,141 @@ export default function AdminPage() {
               </div>
             </SCard>
 
-            {/* 全局 API */}
-            <SCard title="全局 API 默认配置">
+            {/* 供应商管理 */}
+            <SCard title="API 供应商管理" right={
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: v('hover'), color: v('text-muted') }}>
+                  共 {providers.length} 个供应商 · {providers.filter(p => p.is_enabled).length} 个启用
+                </span>
+                <Btn onClick={() => setShowAddProvider(!showAddProvider)} outline><Plus className="w-4 h-4" />{showAddProvider ? '收起' : '添加供应商'}</Btn>
+              </div>
+            }>
               <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div><Lbl>默认 API 域名</Lbl><input value={sysConfig.default_api_base_url || ''} onChange={e => setSysConfig(c => ({ ...c, default_api_base_url: e.target.value }))} placeholder="https://api.openai.com" style={iStyle} /></div>
-                  <div><Lbl>默认 API Key</Lbl><input type="password" value={sysConfig.default_api_key || ''} onChange={e => setSysConfig(c => ({ ...c, default_api_key: e.target.value }))} placeholder="sk-..." style={iStyle} /></div>
-                </div>
-                <div>
-                  <Lbl>请求超时时间（秒）</Lbl>
-                  <input type="number" value={sysConfig.ai_timeout || '180'} onChange={e => setSysConfig(c => ({ ...c, ai_timeout: e.target.value }))} placeholder="180" style={{ ...iStyle, width: '128px' }} />
-                  <p className="text-[10px] mt-1" style={{ color: v('text-muted') }}>AI 生图请求的最大等待时间，默认 180 秒</p>
-                </div>
-                <div style={{ borderTop: `1px solid ${v('border')}`, paddingTop: '16px' }} className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-medium">允许用户自定义 API</p>
-                    <p className="text-[10px] mt-0.5" style={{ color: v('text-muted') }}>关闭后用户无法配置自己的 API Key</p>
+                {showAddProvider && (
+                  <div style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px dashed ${v('border')}`, borderRadius: v('radius-sm'), padding: '16px' }} className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div><Lbl>供应商名称</Lbl><input value={newProvider.name} onChange={e => setNewProvider(p => ({ ...p, name: e.target.value }))} placeholder="如：OpenAI 官方" style={iStyle} /></div>
+                      <div><Lbl>API 域名</Lbl><input value={newProvider.api_base_url} onChange={e => setNewProvider(p => ({ ...p, api_base_url: e.target.value }))} placeholder="https://api.openai.com" style={iStyle} /></div>
+                      <div><Lbl>API Key</Lbl><input type="password" value={newProvider.api_key} onChange={e => setNewProvider(p => ({ ...p, api_key: e.target.value }))} placeholder="sk-..." style={iStyle} /></div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div><Lbl>优先级（越大越优先）</Lbl><input type="number" value={newProvider.priority} onChange={e => setNewProvider(p => ({ ...p, priority: parseInt(e.target.value) || 0 }))} style={{ ...iStyle, width: '120px' }} /></div>
+                      <div>
+                        <Lbl>支持的模型（多选，留空或勾选 * 表示支持所有）</Lbl>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          <label className="flex items-center gap-1 text-xs cursor-pointer">
+                            <input type="checkbox" checked={newProvider.supported_models.includes('*')}
+                              onChange={e => setNewProvider(p => ({ ...p, supported_models: e.target.checked ? ['*'] : [] }))} />
+                            <span style={{ color: '#3b82f6', fontWeight: 600 }}>* 全部模型</span>
+                          </label>
+                          {models.map(m => (
+                            <label key={m.model_id} className="flex items-center gap-1 text-xs cursor-pointer">
+                              <input type="checkbox" disabled={newProvider.supported_models.includes('*')}
+                                checked={newProvider.supported_models.includes('*') || newProvider.supported_models.includes(m.model_id)}
+                                onChange={e => {
+                                  setNewProvider(p => ({
+                                    ...p,
+                                    supported_models: e.target.checked
+                                      ? [...p.supported_models.filter(x => x !== '*'), m.model_id]
+                                      : p.supported_models.filter(x => x !== m.model_id),
+                                  }))
+                                }} />
+                              {m.icon} {m.display_name}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <Btn onClick={handleAddProvider}><Plus className="w-4 h-4" />确认添加</Btn>
                   </div>
-                  <Toggle checked={sysConfig.allow_custom_api !== 'false'} onChange={() => setSysConfig(c => ({ ...c, allow_custom_api: String(c.allow_custom_api === 'false') }))} isDark={isDark} />
+                )}
+                <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
+                  <table className="w-full text-sm">
+                    <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                      {['名称','API 域名','API Key','优先级','支持模型','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{providers.map(p => (
+                      <tr key={p.id} style={{ borderTop: `1px solid ${v('border')}` }}>
+                        {editingProvider?.id === p.id ? <>
+                          <td className="p-2"><input value={editingProvider.name} onChange={e => setEditingProvider({ ...editingProvider, name: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
+                          <td className="p-2"><input value={editingProvider.api_base_url} onChange={e => setEditingProvider({ ...editingProvider, api_base_url: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
+                          <td className="p-2"><input type="password" value={editingProvider.api_key} onChange={e => setEditingProvider({ ...editingProvider, api_key: e.target.value })} placeholder="不修改请留空" style={{ ...iStyle, padding: '4px 8px' }} /></td>
+                          <td className="p-2"><input type="number" value={editingProvider.priority} onChange={e => setEditingProvider({ ...editingProvider, priority: parseInt(e.target.value) || 0 })} style={{ ...iStyle, width: '72px', padding: '4px 8px' }} /></td>
+                          <td className="p-2">
+                            <div className="flex flex-wrap gap-1">
+                              <label className="flex items-center gap-0.5 text-[10px] cursor-pointer">
+                                <input type="checkbox" checked={editingProvider.supported_models.includes('*')}
+                                  onChange={e => setEditingProvider({ ...editingProvider, supported_models: e.target.checked ? ['*'] : [] })} />
+                                <span style={{ color: '#3b82f6' }}>*</span>
+                              </label>
+                              {models.map(m => (
+                                <label key={m.model_id} className="flex items-center gap-0.5 text-[10px] cursor-pointer">
+                                  <input type="checkbox" disabled={editingProvider.supported_models.includes('*')}
+                                    checked={editingProvider.supported_models.includes('*') || editingProvider.supported_models.includes(m.model_id)}
+                                    onChange={e => setEditingProvider({
+                                      ...editingProvider,
+                                      supported_models: e.target.checked
+                                        ? [...editingProvider.supported_models.filter(x => x !== '*'), m.model_id]
+                                        : editingProvider.supported_models.filter(x => x !== m.model_id),
+                                    })} />
+                                  {m.icon}
+                                </label>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-2"><Toggle checked={editingProvider.is_enabled} onChange={() => setEditingProvider({ ...editingProvider, is_enabled: !editingProvider.is_enabled })} isDark={isDark} /></td>
+                          <td className="p-2"><div className="flex gap-1">
+                            <Btn onClick={() => handleUpdateProvider(editingProvider)}>保存</Btn>
+                            <Btn onClick={() => setEditingProvider(null)} outline>取消</Btn>
+                          </div></td>
+                        </> : <>
+                          <td className="p-3 text-xs font-medium">{p.name}</td>
+                          <td className="p-3 text-xs font-mono" style={{ color: v('text-secondary') }}>{p.api_base_url}</td>
+                          <td className="p-3 text-xs font-mono" style={{ color: v('text-muted') }}>{p.api_key ? '••••••' + p.api_key.slice(-4) : '-'}</td>
+                          <td className="p-3"><span className="text-xs font-bold" style={{ color: '#3b82f6' }}>{p.priority}</span></td>
+                          <td className="p-3">
+                            <div className="flex flex-wrap gap-1">
+                              {p.supported_models.includes('*')
+                                ? <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>全部模型</span>
+                                : p.supported_models.map(mid => {
+                                    const m = models.find(x => x.model_id === mid)
+                                    return <span key={mid} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: v('hover'), color: v('text-secondary') }}>{m ? `${m.icon} ${m.display_name}` : mid}</span>
+                                  })
+                              }
+                              {p.supported_models.length === 0 && <span className="text-[10px]" style={{ color: '#ef4444' }}>无</span>}
+                            </div>
+                          </td>
+                          <td className="p-3"><Toggle checked={p.is_enabled} onChange={() => handleToggleProviderEnabled(p)} isDark={isDark} /></td>
+                          <td className="p-3"><div className="flex gap-1">
+                            <button onClick={() => setEditingProvider({ ...p })} className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80" style={{ color: v('text-muted') }}><Pencil className="w-3 h-3" /></button>
+                            <button onClick={() => handleDeleteProvider(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80" style={{ color: '#ef4444' }}><Trash2 className="w-3 h-3" /></button>
+                          </div></td>
+                        </>}
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                  {providers.length === 0 && <p className="text-xs text-center py-8" style={{ color: v('text-muted') }}>暂无供应商，请添加至少一个供应商以启用 AI 服务</p>}
                 </div>
-                <Btn onClick={handleSaveConfig}><Save className="w-4 h-4" />保存配置</Btn>
+                <div style={{ borderTop: `1px solid ${v('border')}`, paddingTop: '16px' }} className="space-y-4">
+                  <div>
+                    <Lbl>请求超时时间（秒）</Lbl>
+                    <input type="number" value={sysConfig.ai_timeout || '180'} onChange={e => setSysConfig(c => ({ ...c, ai_timeout: e.target.value }))} placeholder="180" style={{ ...iStyle, width: '128px' }} />
+                    <p className="text-[10px] mt-1" style={{ color: v('text-muted') }}>AI 生图请求的最大等待时间，默认 180 秒</p>
+                  </div>
+                  <div>
+                    <Lbl>每日签到积分</Lbl>
+                    <input type="number" value={sysConfig.checkin_points || '10'} onChange={e => setSysConfig(c => ({ ...c, checkin_points: e.target.value }))} placeholder="10" style={{ ...iStyle, width: '128px' }} />
+                    <p className="text-[10px] mt-1" style={{ color: v('text-muted') }}>用户每天签到获得的积分数量，默认 10</p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium">允许用户自定义 API</p>
+                      <p className="text-[10px] mt-0.5" style={{ color: v('text-muted') }}>关闭后用户无法配置自己的 API Key</p>
+                    </div>
+                    <Toggle checked={sysConfig.allow_custom_api !== 'false'} onChange={() => setSysConfig(c => ({ ...c, allow_custom_api: String(c.allow_custom_api === 'false') }))} isDark={isDark} />
+                  </div>
+                  <Btn onClick={handleSaveConfig}><Save className="w-4 h-4" />保存配置</Btn>
+                </div>
               </div>
             </SCard>
 
@@ -856,17 +1055,13 @@ export default function AdminPage() {
                       <div><Lbl>积分消耗</Lbl><input type="number" value={newModel.points_cost} onChange={e => setNewModel(m => ({ ...m, points_cost: parseInt(e.target.value) || 1 }))} style={{ ...iStyle, width: '80px' }} /></div>
                     </div>
                     <div><Lbl>描述</Lbl><input value={newModel.description} onChange={e => setNewModel(m => ({ ...m, description: e.target.value }))} placeholder="模型描述" style={iStyle} /></div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div><Lbl>独立 API 域名（留空用全局）</Lbl><input value={newModel.api_base_url} onChange={e => setNewModel(m => ({ ...m, api_base_url: e.target.value }))} placeholder="留空则使用全局默认" style={iStyle} /></div>
-                      <div><Lbl>独立 API Key（留空用全局）</Lbl><input type="password" value={newModel.api_key} onChange={e => setNewModel(m => ({ ...m, api_key: e.target.value }))} placeholder="留空则使用全局默认" style={iStyle} /></div>
-                    </div>
                     <Btn onClick={handleAddModel}><Plus className="w-4 h-4" />确认添加</Btn>
                   </div>
                 )}
                 <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
                   <table className="w-full text-sm">
                     <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                      {['图标','模型ID','名称','描述','积分','独立域名','排序','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                      {['图标','模型ID','名称','描述','积分','排序','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
                     </tr></thead>
                     <tbody>{models.map(m => (
                       <tr key={m.id} style={{ borderTop: `1px solid ${v('border')}` }}>
@@ -876,7 +1071,6 @@ export default function AdminPage() {
                           <td className="p-2"><input value={editingModel.display_name} onChange={e => setEditingModel({ ...editingModel, display_name: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input value={editingModel.description} onChange={e => setEditingModel({ ...editingModel, description: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input type="number" value={editingModel.points_cost} onChange={e => setEditingModel({ ...editingModel, points_cost: parseInt(e.target.value) || 1 })} style={{ ...iStyle, width: '64px', padding: '4px 8px' }} /></td>
-                          <td className="p-2"><input value={editingModel.api_base_url || ''} onChange={e => setEditingModel({ ...editingModel, api_base_url: e.target.value || null })} placeholder="全局" style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input type="number" value={editingModel.sort_order} onChange={e => setEditingModel({ ...editingModel, sort_order: parseInt(e.target.value) || 0 })} style={{ ...iStyle, width: '64px', padding: '4px 8px' }} /></td>
                           <td className="p-2"><Toggle checked={editingModel.is_enabled} onChange={() => setEditingModel({ ...editingModel, is_enabled: !editingModel.is_enabled })} isDark={isDark} /></td>
                           <td className="p-2"><div className="flex gap-1">
@@ -889,7 +1083,6 @@ export default function AdminPage() {
                           <td className="p-3 text-xs font-medium">{m.display_name}</td>
                           <td className="p-3 text-xs" style={{ color: v('text-muted') }}>{m.description}</td>
                           <td className="p-3 text-xs">{m.points_cost}</td>
-                          <td className="p-3 text-xs">{m.api_base_url ? <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ border: `1px solid ${v('border')}`, color: v('text-secondary') }}>独立</span> : <span style={{ color: v('text-muted') }}>全局</span>}</td>
                           <td className="p-3 text-xs">{m.sort_order}</td>
                           <td className="p-3"><Toggle checked={m.is_enabled} onChange={() => handleToggleModelEnabled(m)} isDark={isDark} /></td>
                           <td className="p-3"><div className="flex gap-1">
