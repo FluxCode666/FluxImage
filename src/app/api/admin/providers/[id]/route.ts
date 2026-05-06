@@ -21,6 +21,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.priority !== undefined) updateData.priority = body.priority
     if (body.is_enabled !== undefined) updateData.isEnabled = body.is_enabled
     if (body.supported_models !== undefined) updateData.supportedModels = JSON.stringify(body.supported_models)
+    if (body.response_format !== undefined) updateData.responseFormat = body.response_format
 
     await prisma.apiProvider.update({ where: { id }, data: updateData })
     invalidateConfigCache()

@@ -3,6 +3,25 @@ import FormData from 'form-data'
 import { getEnabledModels, getSystemConfig, ProviderInfo } from './config-service'
 
 class AIService {
+  private async withRetry<T>(fn: () => Promise<T>, retries = 1, label = ''): Promise<T> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fn()
+      } catch (error: unknown) {
+        const code = (error as { code?: string }).code
+        const isRetryable = code === 'ECONNRESET' || code === 'ETIMEDOUT' || code === 'ECONNABORTED' || code === 'ENOTFOUND'
+        if (isRetryable && attempt < retries) {
+          const delay = (attempt + 1) * 5000
+          console.warn(`⚠️ ${label} 网络错误(${code})，${delay / 1000}s 后重试 (${attempt + 1}/${retries})...`)
+          await new Promise(r => setTimeout(r, delay))
+          continue
+        }
+        throw error
+      }
+    }
+    throw new Error('unreachable')
+  }
+
   async getAvailableModels() {
     const models = await getEnabledModels()
     return models.map(model => ({
@@ -55,7 +74,7 @@ class AIService {
     }
     const finalApiKey = apiKey
     const finalBaseURL = baseUrl
-    let finalSize = size || undefined
+    let finalSize = (size && size !== 'auto') ? size : undefined
     if (width && height) finalSize = `${width}x${height}`
 
     const requestData: Record<string, unknown> = {
@@ -74,10 +93,14 @@ class AIService {
 
     try {
       const timeout = await this.getTimeout()
-      const response = await axios.post(`${finalBaseURL}/v1/images/generations`, requestData, {
-        headers: { Authorization: `Bearer ${finalApiKey}`, 'Content-Type': 'application/json' },
-        timeout,
-      })
+      const response = await this.withRetry(
+        () => axios.post(`${finalBaseURL}/v1/images/generations`, requestData, {
+          headers: { Authorization: `Bearer ${finalApiKey}`, 'Content-Type': 'application/json' },
+          timeout,
+        }),
+        2,
+        '[文生图]'
+      )
 
       if (response.data?.data && Array.isArray(response.data.data)) {
         response.data.data = response.data.data.map((item: Record<string, unknown>) => {
@@ -145,10 +168,14 @@ class AIService {
 
     try {
       const timeout = await this.getTimeout()
-      const response = await axios.post(`${finalBaseURL}/v1/images/edits`, form, {
-        headers: { Authorization: `Bearer ${finalApiKey}`, ...form.getHeaders() },
-        timeout,
-      })
+      const response = await this.withRetry(
+        () => axios.post(`${finalBaseURL}/v1/images/edits`, form, {
+          headers: { Authorization: `Bearer ${finalApiKey}`, ...form.getHeaders() },
+          timeout,
+        }),
+        2,
+        '[图生图]'
+      )
 
       if (response.data?.data) {
         response.data.data = response.data.data.map((item: Record<string, unknown>) => {
@@ -228,6 +255,7 @@ class AIService {
         ...rest,
         apiKey: provider.apiKey,
         baseUrl: provider.apiBaseUrl,
+        responseFormat: provider.responseFormat || 'url',
       })
       if (result.success) {
         return { ...result, usedProvider: provider.name }
@@ -259,6 +287,7 @@ class AIService {
         ...rest,
         apiKey: provider.apiKey,
         baseUrl: provider.apiBaseUrl,
+        responseFormat: provider.responseFormat || 'url',
       })
       if (result.success) {
         return { ...result, usedProvider: provider.name }

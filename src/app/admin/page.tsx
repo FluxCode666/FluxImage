@@ -43,6 +43,7 @@ interface ModelItem {
 interface ProviderItem {
   id: number; name: string; api_base_url: string; api_key: string
   priority: number; is_enabled: boolean; supported_models: string[]
+  response_format: string
 }
 
 export default function AdminPage() {
@@ -75,7 +76,7 @@ export default function AdminPage() {
   const [providers, setProviders] = useState<ProviderItem[]>([])
   const [showAddProvider, setShowAddProvider] = useState(false)
   const [editingProvider, setEditingProvider] = useState<ProviderItem | null>(null)
-  const [newProvider, setNewProvider] = useState({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] as string[] })
+  const [newProvider, setNewProvider] = useState({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] as string[], response_format: 'url' })
 
   const [activeTab, setActiveTab] = useState('users')
   const [settingsTab, setSettingsTab] = useState('qiniu')
@@ -302,7 +303,7 @@ export default function AdminPage() {
       if (data.success) {
         toast.success('供应商添加成功')
         fetchProviders()
-        setNewProvider({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] })
+        setNewProvider({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [], response_format: 'url' })
         setShowAddProvider(false)
       } else toast.error(data.error)
     } catch { toast.error('添加失败') }
@@ -808,8 +809,9 @@ export default function AdminPage() {
                       <div><Lbl>API 域名</Lbl><input value={newProvider.api_base_url} onChange={e => setNewProvider(p => ({ ...p, api_base_url: e.target.value }))} placeholder="https://api.openai.com" style={iStyle} /></div>
                       <div><Lbl>API Key</Lbl><input type="password" value={newProvider.api_key} onChange={e => setNewProvider(p => ({ ...p, api_key: e.target.value }))} placeholder="sk-..." style={iStyle} /></div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div><Lbl>优先级（越大越优先）</Lbl><input type="number" value={newProvider.priority} onChange={e => setNewProvider(p => ({ ...p, priority: parseInt(e.target.value) || 0 }))} style={{ ...iStyle, width: '120px' }} /></div>
+                      <div><Lbl>响应格式</Lbl><select value={newProvider.response_format} onChange={e => setNewProvider(p => ({ ...p, response_format: e.target.value }))} style={iStyle}><option value="url">url</option><option value="b64_json">b64_json</option></select></div>
                       <div>
                         <Lbl>支持的模型（多选，留空或勾选 * 表示支持所有）</Lbl>
                         <div className="flex flex-wrap gap-2 mt-1">
@@ -842,7 +844,7 @@ export default function AdminPage() {
                 <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
                   <table className="w-full text-sm">
                     <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                      {['名称','API 域名','API Key','优先级','支持模型','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                      {['名称','API 域名','API Key','优先级','响应格式','支持模型','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
                     </tr></thead>
                     <tbody>{providers.map(p => (
                       <tr key={p.id} style={{ borderTop: `1px solid ${v('border')}` }}>
@@ -851,6 +853,7 @@ export default function AdminPage() {
                           <td className="p-2"><input value={editingProvider.api_base_url} onChange={e => setEditingProvider({ ...editingProvider, api_base_url: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input type="password" value={editingProvider.api_key} onChange={e => setEditingProvider({ ...editingProvider, api_key: e.target.value })} placeholder="不修改请留空" style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input type="number" value={editingProvider.priority} onChange={e => setEditingProvider({ ...editingProvider, priority: parseInt(e.target.value) || 0 })} style={{ ...iStyle, width: '72px', padding: '4px 8px' }} /></td>
+                          <td className="p-2"><select value={editingProvider.response_format || 'url'} onChange={e => setEditingProvider({ ...editingProvider, response_format: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }}><option value="url">url</option><option value="b64_json">b64_json</option></select></td>
                           <td className="p-2">
                             <div className="flex flex-wrap gap-1">
                               <label className="flex items-center gap-0.5 text-[10px] cursor-pointer">
@@ -883,6 +886,7 @@ export default function AdminPage() {
                           <td className="p-3 text-xs font-mono" style={{ color: v('text-secondary') }}>{p.api_base_url}</td>
                           <td className="p-3 text-xs font-mono" style={{ color: v('text-muted') }}>{p.api_key ? '••••••' + p.api_key.slice(-4) : '-'}</td>
                           <td className="p-3"><span className="text-xs font-bold" style={{ color: '#3b82f6' }}>{p.priority}</span></td>
+                          <td className="p-3"><span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: p.response_format === 'b64_json' ? 'rgba(168,85,247,0.15)' : 'rgba(59,130,246,0.15)', color: p.response_format === 'b64_json' ? '#a855f7' : '#3b82f6' }}>{p.response_format || 'url'}</span></td>
                           <td className="p-3">
                             <div className="flex flex-wrap gap-1">
                               {p.supported_models.includes('*')

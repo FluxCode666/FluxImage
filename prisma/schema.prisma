@@ -112,6 +112,7 @@ model ApiProvider {
   priority        Int      @default(0)
   isEnabled       Boolean  @default(true) @map("is_enabled")
   supportedModels String   @default("[]") @map("supported_models") @db.Text
+  responseFormat  String   @default("url") @map("response_format") @db.VarChar(20)
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @default(now()) @map("updated_at")
 

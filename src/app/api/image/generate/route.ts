@@ -3,7 +3,7 @@ import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { aiService } from '@/lib/ai-service'
 import { isCustomApiAllowed, getProvidersForModel, ProviderInfo } from '@/lib/config-service'
-import { uploadFromUrl } from '@/lib/storage-service'
+import { uploadFromUrl, uploadBuffer } from '@/lib/storage-service'
 
 type ApiKeyInfo =
   | { type: 'user'; key: string; baseUrl: string; shouldDeductPoints: false }
@@ -63,11 +63,19 @@ async function executeGenerationTask(
           })
         }
         if (!result.success) throw new Error(result.error || 'AI生成失败')
-        const temporaryImageUrl = result.data?.data?.[0]?.url
-        if (!temporaryImageUrl) throw new Error('AI无返回图片')
+        const imageItem = result.data?.data?.[0]
+        const temporaryImageUrl = imageItem?.url
+        const b64Data = imageItem?.b64_json
+        if (!temporaryImageUrl && !b64Data) throw new Error('AI无返回图片')
 
         const key = `images/${Date.now()}-${userId}-${i}.png`
-        const storedKey = await uploadFromUrl(temporaryImageUrl, key)
+        let storedKey: string
+        if (b64Data) {
+          const buffer = Buffer.from(b64Data, 'base64')
+          storedKey = await uploadBuffer(buffer, key)
+        } else {
+          storedKey = await uploadFromUrl(temporaryImageUrl, key)
+        }
 
         const sizeToSave = width && height ? `${width}x${height}` : (size || null)
 

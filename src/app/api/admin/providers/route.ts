@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
           priority: p.priority,
           is_enabled: p.isEnabled,
           supported_models: supportedModels,
+          response_format: p.responseFormat || 'url',
           created_at: p.createdAt,
           updated_at: p.updatedAt,
         }
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
   if (adminCheck) return adminCheck
 
   try {
-    const { name, api_base_url, api_key, priority, is_enabled, supported_models } = await req.json()
+    const { name, api_base_url, api_key, priority, is_enabled, supported_models, response_format } = await req.json()
 
     if (!name || !api_base_url || !api_key) {
       return NextResponse.json({ success: false, error: '名称、API 域名和 API Key 不能为空' }, { status: 400 })
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
         priority: priority ?? 0,
         isEnabled: is_enabled !== false,
         supportedModels: JSON.stringify(supported_models || []),
+        responseFormat: response_format || 'url',
       },
     })
 
