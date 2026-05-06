@@ -70,6 +70,9 @@ export async function createSeaweedFSProvider(): Promise<StorageProvider> {
     },
 
     buildPublicUrl(key: string): string {
+      if (config.authUser) {
+        return `/api/image/proxy/${key}`
+      }
       return `${config.domain}/${key}`
     },
 
