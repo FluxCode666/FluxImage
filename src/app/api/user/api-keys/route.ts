@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'API Key格式不正确' }, { status: 400 })
     }
 
-    const baseUrl = api_base_url || 'https://api.fengjungpt.com'
+    const baseUrl = api_base_url || 'https://flux-code.cc'
 
     await prisma.userApiConfig.upsert({
       where: { userId: authResult.id },

@@ -302,7 +302,7 @@ router.post('/api-keys', authenticateToken, async (req, res, next) => {
             [userId]
         );
 
-        const baseUrl = api_base_url || 'https://api.fengjungpt.com';
+        const baseUrl = api_base_url || 'https://flux-code.cc';
         const now = new Date();
 
         if (existingKeys.length > 0) {

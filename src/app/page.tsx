@@ -182,7 +182,7 @@ export default function HomePage() {
   const [showUserCenter, setShowUserCenter] = useState(false)
   const [showApiKeyModal, setShowApiKeyModal] = useState(false)
   const [apiKeyInput, setApiKeyInput] = useState('')
-  const [apiBaseUrlInput, setApiBaseUrlInput] = useState('https://api.fengjungpt.com')
+  const [apiBaseUrlInput, setApiBaseUrlInput] = useState('https://flux-code.cc')
   const [hasApiKey, setHasApiKey] = useState(false)
   const [MODELS, setMODELS] = useState<ModelOption[]>([])
   const [allowCustomApi, setAllowCustomApi] = useState(true)
@@ -1340,6 +1340,80 @@ export default function HomePage() {
               <div className="text-base whitespace-pre-wrap leading-[1.8] mt-4">{announcement || '暂无公告'}</div>
             </div>
             <div className="h-[2px] w-full bg-gradient-to-r from-blue-500/50 via-purple-500/50 to-pink-500/50 opacity-50"></div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 新版UI - PC端作品详情弹窗 ===== */}
+      {uiVersion === 'new' && selectedWork && (
+        <div className="hidden lg:flex fixed inset-0 z-[100] items-center justify-center" style={{ background: v('overlay') }} onClick={() => setSelectedWork(null)}>
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto mx-4 animate-fade-in"
+            style={{ background: v('panel'), borderRadius: v('radius-lg'), boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
+              <h3 className="text-sm font-bold">作品详情</h3>
+              <button onClick={() => setSelectedWork(null)}
+                className="w-7 h-7 flex items-center justify-center hover:bg-black/5 transition-colors" style={{ borderRadius: '8px', color: v('text-muted') }}>×</button>
+            </div>
+            <div className="p-6 flex gap-6">
+              <div className="flex-1 overflow-hidden" style={{ borderRadius: v('radius-md'), border: `1px solid ${v('border')}` }}>
+                <img src={selectedWork.image_url} alt="" className="w-full h-auto cursor-zoom-in" onClick={() => setLightboxUrl(selectedWork.image_url)} />
+              </div>
+              <div className="flex-1 space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>提示词</label>
+                  <div className="p-3 text-sm leading-relaxed" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
+                    {selectedWork.prompt || '无提示词'}
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>模型</label>
+                    <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.model || '-'}</div>
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>尺寸</label>
+                    <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.size || '-'}</div>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>创建时间</label>
+                  <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.created_at ? new Date(selectedWork.created_at).toLocaleString() : '-'}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <button onClick={() => applyPrompt(selectedWork.prompt)}
+                    className="py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
+                    style={{ background: v('btn-primary'), borderRadius: v('radius-md') }}>
+                    使用提示词
+                  </button>
+                  <button onClick={() => handleCopyPrompt(selectedWork.prompt)}
+                    className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
+                    style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                    📋 复制提示词
+                  </button>
+                  <button onClick={() => handleDownloadImage(selectedWork.image_url)}
+                    className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
+                    style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                    ⬇️ 下载图片
+                  </button>
+                  <button onClick={() => handleShareWork(selectedWork.id)}
+                    className="py-2.5 text-xs font-bold transition-all hover:opacity-80 text-green-500"
+                    style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: v('radius-md') }}>
+                    🌐 分享社区
+                  </button>
+                  <button onClick={() => setLightboxUrl(selectedWork.image_url)}
+                    className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
+                    style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                    🔍 查看大图
+                  </button>
+                  <button onClick={() => { handleDeleteWork(selectedWork.id); setSelectedWork(null) }}
+                    className="py-2.5 text-xs font-bold transition-all hover:opacity-80 text-red-400"
+                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: v('radius-md') }}>
+                    🗑️ 删除
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
