@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Users, ImageIcon, Megaphone, Plus, Trash2, ArrowLeft, Coins, Settings, Save, Pencil, Cloud, ArrowRightLeft, Server, HardDrive, Sun, Moon, Search, Shield, ShieldOff, UserX, X, Zap, RefreshCw, Minus, ChevronLeft, ChevronRight, Calendar, Palette } from 'lucide-react'
+import { LazyImage } from '@/components/ui/lazy-image'
 
 const v = (name: string) => `var(--nb-${name})`
 
@@ -709,7 +710,7 @@ export default function AdminPage() {
               {inspirations.map(item => (
                 <div key={item.id} className="group overflow-hidden" style={{ background: v('card'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md') }}>
                   <div className="aspect-square relative overflow-hidden">
-                    <img src={item.url} alt="" className="w-full h-full object-cover" />
+                    <LazyImage src={item.url} alt="" className="w-full h-full object-cover" />
                     <button onClick={() => handleDeleteInspiration(item.id)}
                       className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                       style={{ background: 'rgba(239,68,68,0.9)', color: '#fff' }}><Trash2 className="w-3 h-3" /></button>

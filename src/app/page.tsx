@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useSiteConfig } from '@/lib/use-site-config'
+import { LazyImage } from '@/components/ui/lazy-image'
 
 interface UserInfo {
   id: number; username: string; email: string; drawing_points: number
@@ -745,8 +746,7 @@ export default function HomePage() {
                       style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}
                       onClick={() => { if (window.innerWidth < 1024) setMobileDetail({ type: 'work', data: item }); else setSelectedWork(item) }}>
                       <div className="relative overflow-hidden">
-                        <img src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
-                          loading="lazy"
+                        <LazyImage src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
                           style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
                           <p className="text-[10px] text-gray-100 line-clamp-2 leading-relaxed">{item.prompt || '无提示词'}</p>
@@ -931,8 +931,7 @@ export default function HomePage() {
                     <div key={item.id} className="break-inside-avoid mb-3 overflow-hidden group"
                       style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
                       <div className="relative overflow-hidden cursor-pointer" onClick={() => setLightboxUrl(item.image_url)}>
-                        <img src={item.image_url} alt="" className="w-full h-auto block"
-                          loading="lazy"
+                        <LazyImage src={item.image_url} alt="" className="w-full h-auto block"
                           style={{ borderRadius: v('radius-md'), margin: '6px', width: 'calc(100% - 12px)' }} />
                       </div>
                       <div className="px-2 pb-2 pt-1 flex items-center justify-between">
@@ -995,8 +994,7 @@ export default function HomePage() {
                   <div key={item.id} className="break-inside-avoid mb-4 overflow-hidden group hover:-translate-y-1 transition-all"
                     style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
                     <div className="relative overflow-hidden cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedWork(item) }}>
-                      <img src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
-                        loading="lazy"
+                      <LazyImage src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
                         style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
                         <p className="text-xs text-gray-100 line-clamp-2 leading-relaxed">{item.prompt || '无提示词'}</p>
@@ -1174,8 +1172,8 @@ export default function HomePage() {
                       className="break-inside-avoid mb-4 overflow-hidden cursor-pointer group hover:-translate-y-1 transition-all"
                       style={{ background: cardBg, border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
                       <div className="relative overflow-hidden" style={{ padding: '8px', paddingBottom: 0 }}>
-                        <img src={item.url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-500"
-                          loading="lazy" style={{ borderRadius: v('radius-md') }} />
+                        <LazyImage src={item.url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-500"
+                          style={{ borderRadius: v('radius-md') }} />
                       </div>
                       <div className="p-3">
                         <p className="text-xs line-clamp-2 leading-relaxed font-medium" style={{ color: v('text-secondary') }}>
