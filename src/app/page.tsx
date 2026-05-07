@@ -1347,19 +1347,21 @@ export default function HomePage() {
       {/* ===== 新版UI - PC端作品详情弹窗 ===== */}
       {uiVersion === 'new' && selectedWork && (
         <div className="hidden lg:flex fixed inset-0 z-[100] items-center justify-center" style={{ background: v('overlay') }} onClick={() => setSelectedWork(null)}>
-          <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto mx-4 animate-fade-in"
+          <div className="w-full max-w-3xl h-[85vh] flex overflow-hidden mx-4 animate-fade-in"
             style={{ background: v('panel'), borderRadius: v('radius-lg'), boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}
             onClick={(e) => e.stopPropagation()}>
-            <div className="p-5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
-              <h3 className="text-sm font-bold">作品详情</h3>
-              <button onClick={() => setSelectedWork(null)}
-                className="w-7 h-7 flex items-center justify-center hover:bg-black/5 transition-colors" style={{ borderRadius: '8px', color: v('text-muted') }}>×</button>
+            {/* 左侧图片 - 高度撑满弹窗 */}
+            <div className="w-1/2 h-full overflow-hidden shrink-0" style={{ borderRight: `1px solid ${v('border')}` }}>
+              <img src={selectedWork.image_url} alt="" className="w-full h-full object-cover cursor-zoom-in" onClick={() => setLightboxUrl(selectedWork.image_url)} />
             </div>
-            <div className="p-6 flex gap-6">
-              <div className="flex-1 overflow-hidden" style={{ borderRadius: v('radius-md'), border: `1px solid ${v('border')}` }}>
-                <img src={selectedWork.image_url} alt="" className="w-full h-auto cursor-zoom-in" onClick={() => setLightboxUrl(selectedWork.image_url)} />
+            {/* 右侧作品详情 */}
+            <div className="flex-1 flex flex-col min-w-0 min-h-0">
+              <div className="p-5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
+                <h3 className="text-sm font-bold">作品详情</h3>
+                <button onClick={() => setSelectedWork(null)}
+                  className="w-7 h-7 flex items-center justify-center hover:bg-black/5 transition-colors" style={{ borderRadius: '8px', color: v('text-muted') }}>×</button>
               </div>
-              <div className="flex-1 space-y-4">
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>提示词</label>
                   <div className="p-3 text-sm leading-relaxed" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
