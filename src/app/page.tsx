@@ -186,6 +186,12 @@ export default function HomePage() {
   const [MODELS, setMODELS] = useState<ModelOption[]>([])
   const [allowCustomApi, setAllowCustomApi] = useState(true)
   const [showLogoutMenu, setShowLogoutMenu] = useState(false)
+  const [uiVersion, setUiVersion] = useState<'new' | 'classic'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('uiVersion') as 'new' | 'classic') || 'new'
+    }
+    return 'new'
+  })
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const [showNotice, setShowNotice] = useState(false)
   const [aspectRatio, setAspectRatio] = useState('1:1')
@@ -193,6 +199,7 @@ export default function HomePage() {
   const [mobileTab, setMobileTab] = useState<'create' | 'inspire'>('create')
   const [mobileSidebar, setMobileSidebar] = useState(false)
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [mobileDetail, setMobileDetail] = useState<{ type: 'work' | 'inspiration'; data: Creation | InspirationItem } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [inspCategory, setInspCategory] = useState('')
   const [themeMode, setThemeMode] = useState<'system' | 'dark' | 'light'>(() => {
@@ -509,7 +516,7 @@ export default function HomePage() {
       {/* ===== 左侧图标栏 ===== */}
       <div className="hidden lg:flex w-20 flex-col items-center py-8 shrink-0 z-10 relative transition-all duration-300"
         style={{ background: v('panel'), borderRadius: v('panel-radius'), boxShadow: v('panel-shadow') }}>
-        <div className="mb-8 text-[11px] font-black tracking-tight" style={{ color: v('active-color') }}>FI</div>
+        <img src="/logo.png" alt="Logo" className="mb-8 w-9 h-9 rounded-lg object-contain" />
         <div className="flex flex-col items-center space-y-3 w-full">
           {sidebarButtons.map(btn => {
             const isActive = btn.page === currentPage
@@ -541,6 +548,20 @@ export default function HomePage() {
               <button onClick={() => { setShowUserCenter(true); setShowLogoutMenu(false); fetchApiKeyStatus() }}
                 className="w-full px-4 py-3 text-xs text-left hover:bg-blue-500/10 text-blue-500">👤 个人中心</button>
               <div style={{ borderTop: `1px solid ${v('border')}`, padding: '8px 12px' }}>
+                <p className="text-[10px] font-medium mb-2" style={{ color: v('text-muted') }}>界面版本</p>
+                <div className="flex gap-1">
+                  {([['new', '✨', '新版'], ['classic', '📋', '经典']] as const).map(([ver, icon, label]) => (
+                    <button key={ver} onClick={() => { setUiVersion(ver as 'new' | 'classic'); localStorage.setItem('uiVersion', ver) }}
+                      className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] transition-all"
+                      style={uiVersion === ver
+                        ? { background: v('active-bg'), color: v('active-color'), fontWeight: 600 }
+                        : { color: v('text-muted') }}>
+                      <span className="text-sm">{icon}</span>{label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ borderTop: `1px solid ${v('border')}`, padding: '8px 12px' }}>
                 <p className="text-[10px] font-medium mb-2" style={{ color: v('text-muted') }}>主题设置</p>
                 <div className="flex gap-1">
                   {([['system', '💻', '系统'], ['light', '☀️', '明亮'], ['dark', '🌙', '暗黑']] as const).map(([mode, icon, label]) => (
@@ -563,8 +584,206 @@ export default function HomePage() {
 
       {/* ===== 主内容区 ===== */}
       {currentPage === 'create' ? (
+        uiVersion === 'new' ? (
+          /* ===== 新版创作页：居中输入框 + 作品列表 ===== */
+          <div className="flex-1 overflow-y-auto transition-all duration-300">
+            {/* 顶部居中输入区域 */}
+            <div className="w-full max-w-3xl mx-auto px-6 pt-20 lg:pt-12 pb-6">
+              {/* 标题 */}
+              <div className="text-center mb-6">
+                <h1 className="text-2xl font-extrabold bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent">{siteName}</h1>
+                <p className="text-xs mt-1" style={{ color: v('text-muted') }}>{siteSubtitle}</p>
+              </div>
+
+              {/* 输入框区域 */}
+              <div style={{ background: v('panel'), borderRadius: v('radius-lg'), boxShadow: v('panel-shadow'), border: `1px solid ${v('border')}` }}>
+                {/* 参考图预览 */}
+                {previewUrls.length > 0 && (
+                  <div className="flex gap-2 px-4 pt-3">
+                    {previewUrls.map((url, i) => (
+                      <div key={i} className="relative w-16 h-16 overflow-hidden shrink-0" style={{ borderRadius: v('radius-sm'), border: `1px solid ${v('border')}` }}>
+                        <img src={url} alt="" className="w-full h-full object-cover" />
+                        <button onClick={() => removeFile(i)} className="absolute top-0.5 right-0.5 w-4 h-4 bg-red-500 rounded-full text-white text-[10px] flex items-center justify-center">×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 文本输入 */}
+                <div className="relative">
+                  <textarea value={prompt} onChange={e => { setPrompt(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px' }}
+                    className="w-full p-4 pb-2 resize-none text-sm leading-relaxed focus:outline-none bg-transparent min-h-[80px]"
+                    style={{ color: v('text'), maxHeight: '40vh' }}
+                    placeholder="描述你想生成的画面..."
+                    maxLength={promptMaxLength}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleGenerate() }}
+                  />
+                  <div className="absolute bottom-1 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/{promptMaxLength}</div>
+                </div>
+
+                {/* 底部工具栏 */}
+                <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: `1px solid ${v('border')}` }}>
+                  <div className="flex items-center gap-2">
+                    {/* 模型选择 */}
+                    <div className="relative">
+                      <button onClick={() => setModelOpen(!modelOpen)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-blue-500/10 transition-all"
+                        style={{ borderRadius: v('radius-sm'), color: v('text-secondary') }}>
+                        <span className="text-base">{currentModel.icon}</span>
+                        <span>{currentModel.name}</span>
+                        <svg className={`w-3 h-3 transition-transform ${modelOpen ? 'rotate-180' : ''}`} style={{ color: v('text-muted') }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
+                      </button>
+                      {modelOpen && (
+                        <div className="absolute bottom-full left-0 mb-2 w-64 shadow-2xl z-30 overflow-hidden p-1"
+                          style={{ background: v('modal-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-lg') }}>
+                          {MODELS.map(m => (
+                            <button key={m.id} onClick={() => { setModel(m.id); setModelOpen(false) }}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all ${model === m.id ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-blue-500/5'}`}
+                              style={{ borderRadius: v('radius-sm') }}>
+                              <span className="text-xl">{m.icon}</span>
+                              <div>
+                                <div className="text-sm font-medium">{m.name}</div>
+                                <div className="text-[10px]" style={{ color: v('text-muted') }}>{m.desc}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 上传参考图 */}
+                    <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} className="hidden" multiple />
+                    <button onClick={() => fileInputRef.current?.click()} title="上传参考图"
+                      className="flex items-center gap-1 px-2 py-1.5 text-xs hover:bg-blue-500/10 transition-all"
+                      style={{ borderRadius: v('radius-sm'), color: v('text-muted') }}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    </button>
+
+                    {/* 高级设置 */}
+                    <button onClick={() => setShowAdvanced(!showAdvanced)}
+                      className={`flex items-center gap-1 px-2 py-1.5 text-xs hover:bg-blue-500/10 transition-all ${showAdvanced ? 'text-blue-500' : ''}`}
+                      style={{ borderRadius: v('radius-sm'), color: showAdvanced ? undefined : v('text-muted') }}>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                      <span>设置</span>
+                    </button>
+                  </div>
+
+                  {/* 积分显示 */}
+                  <div className="text-[10px]" style={{ color: v('text-muted') }}>
+                    积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 高级设置展开区域 */}
+              {showAdvanced && (
+                <div className="mt-3 px-4 py-3 flex flex-wrap gap-4 items-center"
+                  style={{ background: v('panel'), borderRadius: v('radius-md'), border: `1px solid ${v('border')}` }}>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] whitespace-nowrap" style={{ color: v('text-muted') }}>数量</label>
+                    <select value={quantity} onChange={e => setQuantity(e.target.value)}
+                      className="px-2 py-1 text-xs outline-none"
+                      style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm') }}>
+                      <option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option>
+                    </select>
+                  </div>
+                  {model.includes('nano-banana-2') && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] whitespace-nowrap" style={{ color: v('text-muted') }}>比例</label>
+                      <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
+                        className="px-2 py-1 text-xs outline-none"
+                        style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm') }}>
+                        <option value="1:1">1:1</option><option value="3:4">3:4</option><option value="4:3">4:3</option>
+                        <option value="16:9">16:9</option><option value="9:16">9:16</option><option value="21:9">21:9</option>
+                      </select>
+                    </div>
+                  )}
+                  {(model === 'gpt-image-2' || model === 'gpt-4o-image') && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] whitespace-nowrap" style={{ color: v('text-muted') }}>尺寸</label>
+                      <select value={imageSize} onChange={e => setImageSize(e.target.value)}
+                        className="px-2 py-1 text-xs outline-none"
+                        style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm') }}>
+                        <option value="auto">自动</option>
+                        <option value="1024x1024">1:1</option>
+                        <option value="1024x1536">3:4</option>
+                        <option value="1536x1024">4:3</option>
+                        <option value="1024x1792">9:16</option>
+                        <option value="1792x1024">16:9</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 生成按钮 */}
+              <div className="mt-4 flex justify-center">
+                <button onClick={handleGenerate} disabled={loading}
+                  className="px-10 py-3 text-white font-bold flex items-center justify-center gap-3 relative overflow-hidden transition-transform active:scale-95 disabled:opacity-50"
+                  style={{ background: v('btn-primary'), borderRadius: v('radius-md'), boxShadow: v('btn-primary-shadow') }}>
+                  <span>{loading ? '生成中...' : '立即生成'}</span>
+                  {loading ? <span className="animate-spin">⏳</span> : <span className="animate-pulse">💎</span>}
+                </button>
+              </div>
+            </div>
+
+            {/* 我的作品列表 */}
+            <div className="px-6 pb-6">
+              <div className="max-w-6xl mx-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold">我的作品</h2>
+                  <span className="text-xs" style={{ color: v('text-muted') }}>Ctrl+Enter 快速生成</span>
+                </div>
+                <div className="columns-2 lg:columns-3 xl:columns-4 gap-4">
+                  {activeTasks.map(task => (
+                    <div key={`ntask-${task.id}`} className="break-inside-avoid mb-4">
+                      <TaskCard task={task} isDark={isDark} />
+                    </div>
+                  ))}
+                  {works.length > 0 ? works.map((item, idx) => (
+                    <div key={item.id} className="break-inside-avoid mb-4 overflow-hidden group hover:-translate-y-1 transition-all cursor-pointer"
+                      style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}
+                      onClick={() => { if (window.innerWidth < 1024) setMobileDetail({ type: 'work', data: item }); else setSelectedWork(item) }}>
+                      <div className="relative overflow-hidden">
+                        <img src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
+                          loading="lazy"
+                          style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
+                          <p className="text-[10px] text-gray-100 line-clamp-2 leading-relaxed">{item.prompt || '无提示词'}</p>
+                        </div>
+                      </div>
+                      <div className="px-2 pb-2 pt-1 flex items-center justify-between">
+                        <span className="text-[9px] truncate max-w-[40%]" style={{ color: v('text-muted') }}>{item.model || ''}</span>
+                        <div className="flex items-center gap-0.5">
+                          <button title="下载" onClick={(e) => { e.stopPropagation(); handleDownloadImage(item.image_url) }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                          </button>
+                          <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(item.prompt) }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                          </button>
+                          <button title="分享" onClick={(e) => { e.stopPropagation(); handleShareWork(item.id) }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                          </button>
+                          <button title="删除" onClick={(e) => { e.stopPropagation(); handleDeleteWork(item.id) }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-red-400/60">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )) : activeTasks.length === 0 ? (
+                    <div className="w-full text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
         <>
-          {/* 创作页：控制面板 */}
+          {/* 经典创作页：控制面板 */}
           <div className="w-full lg:w-96 flex flex-col shrink-0 transition-all duration-300"
             style={{ background: v('panel'), borderRadius: v('panel-radius'), boxShadow: v('panel-shadow') }}>
             <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-thin pt-16 lg:pt-6">
@@ -696,6 +915,56 @@ export default function HomePage() {
                     )}
                   </div>
                 )}
+              </div>
+
+              {/* 移动端：我的作品 */}
+              <div className="lg:hidden mt-2">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-bold">我的作品</h2>
+                  <span className="text-[10px]" style={{ color: v('text-muted') }}>积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span></span>
+                </div>
+                <div className="columns-2 gap-3">
+                  {activeTasks.map(task => (
+                    <TaskCard key={`mtask-${task.id}`} task={task} isDark={isDark} />
+                  ))}
+                  {works.length > 0 ? works.map((item, idx) => (
+                    <div key={item.id} className="break-inside-avoid mb-3 overflow-hidden group"
+                      style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
+                      <div className="relative overflow-hidden cursor-pointer" onClick={() => setLightboxUrl(item.image_url)}>
+                        <img src={item.image_url} alt="" className="w-full h-auto block"
+                          loading="lazy"
+                          style={{ borderRadius: v('radius-md'), margin: '6px', width: 'calc(100% - 12px)' }} />
+                      </div>
+                      <div className="px-2 pb-2 pt-1 flex items-center justify-between">
+                        <span className="text-[9px] truncate max-w-[40%]" style={{ color: v('text-muted') }}>{item.model || ''}</span>
+                        <div className="flex items-center gap-0.5">
+                          <button title="下载" onClick={() => handleDownloadImage(item.image_url)}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                          </button>
+                          <button title="复制提示词" onClick={() => handleCopyPrompt(item.prompt)}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                          </button>
+                          <button title="用作参考图" onClick={() => useAsReference(item.image_url, item.image_key)}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                          </button>
+                          <button title="分享到社区" onClick={() => handleShareWork(item.id)}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                          </button>
+                          <button title="删除" onClick={() => handleDeleteWork(item.id)}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-red-400/60">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )) : activeTasks.length === 0 ? (
+                    <div className="col-span-2 text-center text-xs py-6" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
+                  ) : null}
+                </div>
               </div>
             </div>
             <div className="p-6" style={{ borderTop: `1px solid ${v('border')}` }}>
@@ -849,38 +1118,39 @@ export default function HomePage() {
             </div>
           </div>
         </>
+        )
       ) : (
         /* ===== 灵感页 ===== */
         <>
           <div className="flex-1 flex flex-col h-full overflow-hidden transition-all duration-300">
             {/* 灵感页头部 */}
-            <div className="p-6 lg:p-8 shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
-              <div className="flex items-center justify-between mb-4">
+            <div className="pt-16 lg:pt-0 px-4 pb-4 lg:p-8 shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
                 <div>
-                  <h1 className="text-2xl font-bold tracking-tight">创意灵感库</h1>
+                  <h1 className="text-xl lg:text-2xl font-bold tracking-tight">创意灵感库</h1>
                   <p className="text-xs mt-1" style={{ color: v('text-muted') }}>探索和发现优秀的 AI 创作</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="relative">
+                  <div className="relative flex-1 lg:flex-none">
                     <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: v('text-muted') }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
                     <input type="text" placeholder="搜索灵感..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                      className="pl-9 pr-4 py-2 text-xs w-48 focus:w-64 transition-all outline-none focus:border-blue-500/50"
+                      className="pl-9 pr-4 py-2 text-xs w-full lg:w-48 lg:focus:w-64 transition-all outline-none focus:border-blue-500/50"
                       style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-md') }} />
                   </div>
-                  <div className="text-xs" style={{ color: v('text-muted') }}>
+                  <div className="text-xs whitespace-nowrap" style={{ color: v('text-muted') }}>
                     共 <span className="font-bold" style={{ color: v('text') }}>{inspirations.length}</span> 张
                   </div>
                 </div>
               </div>
               {/* 分类标签 */}
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 overflow-x-auto pb-1 -mb-1 no-scrollbar">
                 {['全部', '人物', '风景', '动漫', '写实', '抽象', '科幻', '美食', '动物', '建筑', '其他'].map(tag => {
                   const catValue = tag === '全部' ? '' : tag
                   const isActive = inspCategory === catValue
                   return (
                     <button key={tag}
                       onClick={() => setInspCategory(catValue)}
-                      className="px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5"
+                      className="px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1.5 whitespace-nowrap shrink-0"
                       style={{
                         borderRadius: v('radius-sm'),
                         ...(isActive
@@ -900,7 +1170,7 @@ export default function HomePage() {
                 {inspirations.length > 0 ? inspirations.map((item, idx) => {
                   const cardBg = isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length]
                   return (
-                    <div key={item.id} onClick={(e) => { e.stopPropagation(); setSelectedInspiration(item) }}
+                    <div key={item.id} onClick={(e) => { e.stopPropagation(); if (window.innerWidth < 1024) setMobileDetail({ type: 'inspiration', data: item }); else setSelectedInspiration(item) }}
                       className="break-inside-avoid mb-4 overflow-hidden cursor-pointer group hover:-translate-y-1 transition-all"
                       style={{ background: cardBg, border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
                       <div className="relative overflow-hidden" style={{ padding: '8px', paddingBottom: 0 }}>
@@ -1076,6 +1346,89 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* ===== 移动端详情弹窗 ===== */}
+      {mobileDetail && (
+        <>
+          <div className="lg:hidden fixed inset-0 z-[100]" style={{ background: v('overlay') }} onClick={() => setMobileDetail(null)}></div>
+          <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[101] max-h-[90vh] overflow-y-auto animate-[slideUp_0.25s_ease-out]"
+            style={{ background: v('panel'), borderRadius: '20px 20px 0 0', boxShadow: '0 -4px 30px rgba(0,0,0,0.15)' }}>
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full" style={{ background: v('border') }}></div>
+            </div>
+            <div className="px-4 pb-8" style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 1.5rem))' }}>
+              {/* 图片 */}
+              <div className="overflow-hidden mb-4" style={{ borderRadius: v('radius-md'), border: `1px solid ${v('border')}` }}>
+                <img
+                  src={mobileDetail.type === 'work' ? (mobileDetail.data as Creation).image_url : (mobileDetail.data as InspirationItem).url}
+                  alt="" className="w-full h-auto cursor-zoom-in"
+                  onClick={() => setLightboxUrl(mobileDetail.type === 'work' ? (mobileDetail.data as Creation).image_url : (mobileDetail.data as InspirationItem).url)}
+                />
+              </div>
+              {/* 提示词 */}
+              <div className="mb-4">
+                <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>提示词</label>
+                <div className="p-3 text-sm leading-relaxed" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
+                  {mobileDetail.data.prompt || '无提示词'}
+                </div>
+              </div>
+              {/* 模型信息 */}
+              <div className="flex gap-3 mb-4">
+                <div className="flex-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>模型</label>
+                  <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
+                    {mobileDetail.type === 'work' ? ((mobileDetail.data as Creation).model || '-') : ((mobileDetail.data as InspirationItem).model || 'AI 创作')}
+                  </div>
+                </div>
+                {mobileDetail.type === 'work' && (
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>尺寸</label>
+                    <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{(mobileDetail.data as Creation).size || '-'}</div>
+                  </div>
+                )}
+              </div>
+              {mobileDetail.type === 'work' && (
+                <div className="mb-4">
+                  <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>创建时间</label>
+                  <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{(mobileDetail.data as Creation).created_at ? new Date((mobileDetail.data as Creation).created_at).toLocaleString() : '-'}</div>
+                </div>
+              )}
+              {/* 操作按钮 */}
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => { applyPrompt(mobileDetail.data.prompt || ''); setMobileDetail(null) }}
+                  className="py-3 text-white text-xs font-bold transition-transform active:scale-95"
+                  style={{ background: v('btn-primary'), borderRadius: v('radius-md') }}>
+                  使用提示词
+                </button>
+                <button onClick={() => handleCopyPrompt(mobileDetail.data.prompt || '')}
+                  className="py-3 text-xs font-bold transition-all active:scale-95"
+                  style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                  📋 复制提示词
+                </button>
+                <button onClick={() => handleDownloadImage(mobileDetail.type === 'work' ? (mobileDetail.data as Creation).image_url : (mobileDetail.data as InspirationItem).url)}
+                  className="py-3 text-xs font-bold transition-all active:scale-95"
+                  style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
+                  ⬇️ 下载图片
+                </button>
+                {mobileDetail.type === 'work' && (
+                  <button onClick={() => { handleShareWork((mobileDetail.data as Creation).id); setMobileDetail(null) }}
+                    className="py-3 text-xs font-bold transition-all active:scale-95 text-green-500"
+                    style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: v('radius-md') }}>
+                    🌐 分享社区
+                  </button>
+                )}
+                {mobileDetail.type === 'work' && (
+                  <button onClick={() => { handleDeleteWork((mobileDetail.data as Creation).id); setMobileDetail(null) }}
+                    className="py-3 text-xs font-bold transition-all active:scale-95 text-red-400"
+                    style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: v('radius-md') }}>
+                    🗑️ 删除
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* ===== 灯箱 ===== */}
       {lightboxUrl && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center flex-col bg-black/92 backdrop-blur-[5px] cursor-pointer"
@@ -1109,7 +1462,106 @@ export default function HomePage() {
       </div>
 
       {mobileSidebar && (
-        <div className="lg:hidden fixed inset-0 z-[90] backdrop-blur-sm" style={{ background: v('overlay') }} onClick={() => setMobileSidebar(false)}></div>
+        <>
+          <div className="lg:hidden fixed inset-0 z-[90]" style={{ background: v('overlay') }} onClick={() => setMobileSidebar(false)}></div>
+          <div className="lg:hidden fixed bottom-0 left-0 right-0 z-[91] max-h-[85vh] overflow-y-auto animate-[slideUp_0.25s_ease-out]"
+            style={{ background: v('panel'), borderRadius: '20px 20px 0 0', boxShadow: '0 -4px 30px rgba(0,0,0,0.15)' }}>
+            <style>{`@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}`}</style>
+            {/* 拖拽指示条 */}
+            <div className="flex justify-center pt-3 pb-2">
+              <div className="w-10 h-1 rounded-full" style={{ background: v('border') }}></div>
+            </div>
+
+            {/* 用户信息卡片 */}
+            <div className="mx-4 mb-4 p-4 flex items-center gap-3" style={{ background: v('tag-bg'), borderRadius: '16px' }}>
+              <div className="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-base shrink-0"
+                style={{ background: 'linear-gradient(135deg, #3b82f6, #10b981)' }}>
+                {user.username?.[0]?.toUpperCase() || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold truncate">{user.username}</p>
+                <p className="text-[11px] mt-0.5" style={{ color: v('text-muted') }}>积分 <span className="text-blue-500 font-bold">{user.drawing_points}</span></p>
+              </div>
+              <button onClick={() => { setShowUserCenter(true); setMobileSidebar(false); fetchApiKeyStatus() }}
+                className="w-9 h-9 flex items-center justify-center rounded-full" style={{ background: v('active-bg') }}>
+                <svg className="w-4 h-4" style={{ color: v('active-color') }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
+              </button>
+            </div>
+
+            {/* 功能导航 - 宫格 */}
+            <div className="mx-4 mb-4 grid grid-cols-4 gap-2">
+              {sidebarButtons.map(btn => {
+                const isActive = btn.page === currentPage
+                return (
+                  <button key={btn.id}
+                    className="flex flex-col items-center gap-1.5 py-3 transition-all"
+                    style={{ borderRadius: '14px', ...(isActive ? { background: v('active-bg') } : {}) }}
+                    onClick={() => {
+                      if (btn.page) { setCurrentPage(btn.page); setMobileTab(btn.page === 'create' ? 'create' : 'inspire'); setSelectedInspiration(null) }
+                      else btn.onClick?.()
+                      setMobileSidebar(false)
+                    }}>
+                    <span className="text-xl">{btn.icon}</span>
+                    <span className="text-[11px] font-medium" style={{ color: isActive ? v('active-color') : v('text-secondary') }}>{btn.title}</span>
+                  </button>
+                )
+              })}
+              {user?.role === 'admin' && (
+                <button onClick={() => { router.push('/admin'); setMobileSidebar(false) }}
+                  className="flex flex-col items-center gap-1.5 py-3 transition-all"
+                  style={{ borderRadius: '14px' }}>
+                  <span className="text-xl">⚙️</span>
+                  <span className="text-[11px] font-medium" style={{ color: v('text-secondary') }}>管理</span>
+                </button>
+              )}
+            </div>
+
+            {/* 设置区块 */}
+            <div className="mx-4 mb-4 p-4" style={{ background: v('tag-bg'), borderRadius: '16px' }}>
+              {/* 界面版本 */}
+              <p className="text-[11px] font-semibold mb-2.5" style={{ color: v('text-muted') }}>界面版本</p>
+              <div className="flex gap-2 mb-4">
+                {([['new', '✨', '新版'], ['classic', '📋', '经典']] as const).map(([ver, icon, label]) => (
+                  <button key={ver} onClick={() => { setUiVersion(ver as 'new' | 'classic'); localStorage.setItem('uiVersion', ver) }}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-medium transition-all"
+                    style={{
+                      borderRadius: '10px',
+                      ...(uiVersion === ver
+                        ? { background: v('active-bg'), color: v('active-color'), fontWeight: 700, boxShadow: '0 2px 8px rgba(59,130,246,0.15)' }
+                        : { background: v('panel'), color: v('text-muted'), border: `1px solid ${v('border')}` }),
+                    }}>
+                    <span>{icon}</span>{label}
+                  </button>
+                ))}
+              </div>
+              {/* 主题 */}
+              <p className="text-[11px] font-semibold mb-2.5" style={{ color: v('text-muted') }}>主题</p>
+              <div className="flex gap-2">
+                {([['system', '💻', '跟随系统'], ['light', '☀️', '明亮'], ['dark', '🌙', '暗黑']] as const).map(([mode, icon, label]) => (
+                  <button key={mode} onClick={() => applyThemeMode(mode)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-all"
+                    style={{
+                      borderRadius: '10px',
+                      ...(themeMode === mode
+                        ? { background: v('active-bg'), color: v('active-color'), fontWeight: 700, boxShadow: '0 2px 8px rgba(59,130,246,0.15)' }
+                        : { background: v('panel'), color: v('text-muted'), border: `1px solid ${v('border')}` }),
+                    }}>
+                    <span>{icon}</span>{label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 退出按钮 */}
+            <div className="mx-4 mb-6">
+              <button onClick={() => { handleLogout(); setMobileSidebar(false) }}
+                className="w-full py-3 text-sm font-medium text-red-500 transition-all active:scale-[0.98]"
+                style={{ background: v('tag-bg'), borderRadius: '14px' }}>
+                退出登录
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
