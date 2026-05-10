@@ -40,6 +40,7 @@ export async function PUT(req: NextRequest) {
       'default_points_cost',
       'site_name', 'site_subtitle',
       'prompt_max_length',
+      'payment_selection_mode', 'direct_recharge_rate', 'direct_recharge_min', 'direct_recharge_max',
     ]
 
     for (const key of allowedKeys) {

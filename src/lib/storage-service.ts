@@ -11,6 +11,8 @@ export interface StorageProvider {
   deleteFile(key: string): Promise<void>
   /** 根据存储 key 构建公开访问 URL */
   buildPublicUrl(key: string): string
+  /** 检查文件是否存在 */
+  fileExists(key: string): Promise<boolean>
   /** 列出并清理超过指定天数的文件，返回删除数量 */
   cleanupOldFiles(days: number): Promise<number>
 }
@@ -110,4 +112,22 @@ export async function deleteFile(key: string): Promise<void> {
 export async function cleanupOldFiles(days: number): Promise<number> {
   const provider = await getStorageProvider()
   return provider.cleanupOldFiles(days)
+}
+
+export async function fileExists(key: string): Promise<boolean> {
+  if (!key) return false
+  if (key.startsWith('http://') || key.startsWith('https://')) return true
+  if (key.startsWith('/uploads/')) {
+    const fs = await import('fs')
+    const path = await import('path')
+    return fs.existsSync(path.join(process.cwd(), 'public', key))
+  }
+  const { isLocalFallbackFile } = await import('./local-fallback')
+  if (isLocalFallbackFile(key)) {
+    const fs = await import('fs')
+    const path = await import('path')
+    return fs.existsSync(path.join(process.cwd(), 'public/uploads', key))
+  }
+  const provider = await getStorageProvider()
+  return provider.fileExists(key)
 }

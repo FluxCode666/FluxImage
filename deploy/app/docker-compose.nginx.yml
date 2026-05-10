@@ -3,8 +3,8 @@ services:
     image: ${APP_IMAGE:-ghcr.io/fluxcode666/fluximage:latest}
     container_name: fluximage-app
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     env_file:
       - .env
     environment:
@@ -27,5 +27,32 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  nginx:
+    image: nginx:alpine
+    container_name: fluximage-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - certbot-etc:/etc/letsencrypt:ro
+      - certbot-var:/var/lib/letsencrypt
+      - certbot-webroot:/var/www/certbot:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   uploads:
+  certbot-etc:
+    external: true
+  certbot-var:
+    external: true
+  certbot-webroot:
+    external: true

@@ -50,3 +50,8 @@ pnpm-lock.yaml
 # IDE
 .vscode/
 .idea/
+
+# deploy data
+deploy/minio/data/
+deploy/minio/config/
+deploy/seaweedfs/data/

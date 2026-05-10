@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { buildPublicUrl } from '@/lib/storage-service'
+import { buildPublicUrl, fileExists } from '@/lib/storage-service'
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const authResult = authenticateRequest(req)
@@ -25,7 +25,12 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         model: task.model,
         size: task.size,
         quantity: task.quantity,
-        result: task.result ? await Promise.all(JSON.parse(task.result).map(async (img: any) => ({ ...img, url: await buildPublicUrl(img.url) }))) : null,
+        result: task.result ? await (async () => {
+          const imgs = JSON.parse(task.result!)
+          const checks = await Promise.all(imgs.map((img: any) => fileExists(img.url)))
+          const valid = imgs.filter((_: any, i: number) => checks[i])
+          return Promise.all(valid.map(async (img: any) => ({ ...img, url: await buildPublicUrl(img.url) })))
+        })() : null,
         error: task.error,
         created_at: task.createdAt.toISOString(),
         completed_at: task.completedAt?.toISOString() || null,

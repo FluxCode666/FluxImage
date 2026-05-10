@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { buildPublicUrl } from '@/lib/storage-service'
+import { buildPublicUrl, fileExists } from '@/lib/storage-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,8 +25,13 @@ export async function GET(req: NextRequest) {
 
     const hasMore = rows.length > limit
     const items = hasMore ? rows.slice(0, limit) : rows
-    const nextCursor = items.length > 0 ? items[items.length - 1].id : null
-    const data = await Promise.all(items.map(async r => ({ ...r, url: await buildPublicUrl(r.url) })))
+
+    // 过滤掉 OSS 中不存在的文件
+    const existsChecks = await Promise.all(items.map(r => fileExists(r.url)))
+    const validItems = items.filter((_, i) => existsChecks[i])
+
+    const nextCursor = validItems.length > 0 ? validItems[validItems.length - 1].id : null
+    const data = await Promise.all(validItems.map(async r => ({ ...r, url: await buildPublicUrl(r.url) })))
 
     return NextResponse.json({ success: true, data, hasMore, nextCursor })
   } catch (error) {

@@ -24,6 +24,7 @@ model User {
   creations       Creation[]
   apiConfig       UserApiConfig?
   generationTasks GenerationTask[]
+  paymentOrders   PaymentOrder[]
 
   @@map("users")
 }
@@ -137,3 +138,83 @@ model GenerationTask {
   @@index([userId, status])
   @@map("generation_tasks")
 }
+
+// ── 支付系统 ──────────────────────────────────────
+
+model PaymentProvider {
+  id         Int       @id @default(autoincrement())
+  name       String    @db.VarChar(100)
+  channel    String    @db.VarChar(20) // alipay / wechat
+  appId      String    @map("app_id") @db.VarChar(100)
+  privateKey String    @map("private_key") @db.Text
+  publicKey  String    @map("public_key") @db.Text
+  notifyUrl  String?   @map("notify_url") @db.VarChar(500)
+  priority   Int       @default(0)
+  isEnabled  Boolean   @default(true) @map("is_enabled")
+  lastUsedAt DateTime? @map("last_used_at")
+  metadata   String?   @db.Text // JSON 扩展字段
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @map("updated_at")
+
+  orders PaymentOrder[]
+
+  @@map("payment_providers")
+}
+
+model PointsPackage {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(100)
+  points        Int
+  price         Int      // 售价，单位：分
+  originalPrice Int?     @map("original_price") // 原价（划线价），单位：分
+  badge         String?  @db.VarChar(50) // 角标：热门、推荐等
+  isEnabled     Boolean  @default(true) @map("is_enabled")
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  orders PaymentOrder[]
+
+  @@map("points_packages")
+}
+
+model PaymentOrder {
+  id         Int       @id @default(autoincrement())
+  orderNo    String    @unique @map("order_no") @db.VarChar(64)
+  userId     Int       @map("user_id")
+  packageId  Int?      @map("package_id") // null = 直充
+  points     Int
+  amount     Int       // 实付金额，单位：分
+  channel    String    @db.VarChar(20) // alipay / wechat
+  providerId Int?      @map("provider_id")
+  tradeNo    String?   @map("trade_no") @db.VarChar(100) // 第三方交易号
+  status     String    @default("pending") @db.VarChar(20) // pending/paid/failed/expired
+  paidAt     DateTime? @map("paid_at")
+  expiredAt  DateTime  @map("expired_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  package  PointsPackage?   @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  provider PaymentProvider? @relation(fields: [providerId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([status, expiredAt])
+  @@map("payment_orders")
+}
+
+// ── 本地兜底上传重试队列 ──────────────────────────
+model PendingUpload {
+  id         Int      @id @default(autoincrement())
+  fileKey    String   @map("file_key") @db.VarChar(500)
+  localPath  String   @map("local_path") @db.VarChar(1000)
+  status     String   @default("pending") @db.VarChar(20)
+  retryCount Int      @default(0) @map("retry_count")
+  error      String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  @@index([status])
+  @@map("pending_uploads")
+}
+
+// 注意: _migrations 表由 src/lib/migrator.ts 管理，不在 Prisma schema 中定义

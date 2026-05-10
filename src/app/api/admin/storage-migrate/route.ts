@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
     // 执行迁移：从源下载 → 上传到目标
     let migrated = 0
     let failed = 0
+    let skipped = 0
     const errors: string[] = []
 
     for (const key of keysList) {
@@ -88,19 +89,31 @@ export async function POST(req: NextRequest) {
         const buffer = await sourceProvider.downloadToBuffer(key)
         await targetProvider.uploadBuffer(buffer, key)
         migrated++
-      } catch (e) {
-        failed++
-        const msg = `${key}: ${(e as Error).message}`
-        if (errors.length < 10) errors.push(msg)
-        console.error(`[迁移失败] ${msg}`)
+      } catch (e: any) {
+        // 404 = 文件不在源存储中（可能是其他 provider 上传的），跳过
+        const status = e?.response?.status || e?.status
+        if (status === 404) {
+          skipped++
+          console.log(`[迁移跳过] ${key}: 文件不在源存储中`)
+        } else {
+          failed++
+          const msg = `${key}: ${(e as Error).message}`
+          if (errors.length < 10) errors.push(msg)
+          console.error(`[迁移失败] ${msg}`)
+        }
       }
     }
 
+    const parts = [`${migrated} 成功`]
+    if (skipped > 0) parts.push(`${skipped} 跳过(不在源存储)`)
+    if (failed > 0) parts.push(`${failed} 失败`)
+
     return NextResponse.json({
       success: true,
-      message: `迁移完成: ${migrated} 成功, ${failed} 失败 (共 ${keysList.length} 个文件)`,
+      message: `迁移完成: ${parts.join(', ')} (共 ${keysList.length} 个文件)`,
       total: keysList.length,
       migrated,
+      skipped,
       failed,
       errors: errors.length > 0 ? errors : undefined,
     })

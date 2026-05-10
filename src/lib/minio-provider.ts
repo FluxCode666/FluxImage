@@ -79,6 +79,15 @@ export async function createMinioProvider(): Promise<StorageProvider> {
       return `${domain}/${key}`
     },
 
+    async fileExists(key: string): Promise<boolean> {
+      try {
+        await client.statObject(config.bucket, key)
+        return true
+      } catch {
+        return false
+      }
+    },
+
     async cleanupOldFiles(days: number): Promise<number> {
       const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000
       let deletedCount = 0

@@ -225,6 +225,19 @@ export default function HomePage() {
   const inspScrollRef = useRef<HTMLDivElement>(null)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logoutMenuRef = useRef<HTMLDivElement>(null)
+  const [showRecharge, setShowRecharge] = useState(false)
+  const [rechargeTab, setRechargeTab] = useState<'package' | 'direct'>('package')
+  const [rechargePackages, setRechargePackages] = useState<{ id: number; name: string; points: number; price: number; original_price: number | null; badge: string | null }[]>([])
+  const [directRate, setDirectRate] = useState(10)
+  const [directMin, setDirectMin] = useState(100)
+  const [directMax, setDirectMax] = useState(100000)
+  const [directAmount, setDirectAmount] = useState('')
+  const [selectedPkgId, setSelectedPkgId] = useState<number | null>(null)
+  const [payQrCode, setPayQrCode] = useState<string | null>(null)
+  const [payOrderNo, setPayOrderNo] = useState<string | null>(null)
+  const [payStatus, setPayStatus] = useState<'idle' | 'loading' | 'qr' | 'success' | 'error'>('idle')
+  const [payError, setPayError] = useState('')
+  const payPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     document.documentElement.className = theme
@@ -490,11 +503,84 @@ export default function HomePage() {
       fetchActiveTasks().then((tasks: GenerationTask[]) => {
         if (tasks.length > 0) startPolling(tasks.map((t: GenerationTask) => t.id))
       })
+    } else if (currentPage === 'inspire') {
+      fetchInspirations(true, searchQuery, inspCategory)
     }
     return () => stopPolling()
   }, [currentPage])
 
   const currentModel = MODELS.find(m => m.id === model) || MODELS[0] || { id: '', name: '加载中...', icon: '⏳', desc: '' }
+
+  /* ===== 充值相关函数 ===== */
+  async function openRecharge() {
+    setShowRecharge(true)
+    setPayStatus('idle')
+    setPayQrCode(null)
+    setPayOrderNo(null)
+    setPayError('')
+    setSelectedPkgId(null)
+    setDirectAmount('')
+    try {
+      const res = await fetch('/api/payment/packages')
+      const data = await res.json()
+      if (data.success) {
+        setRechargePackages(data.data.packages)
+        setDirectRate(data.data.directRecharge.rate)
+        setDirectMin(data.data.directRecharge.minAmount)
+        setDirectMax(data.data.directRecharge.maxAmount)
+      }
+    } catch {}
+  }
+
+  function closeRecharge() {
+    setShowRecharge(false)
+    if (payPollRef.current) { clearInterval(payPollRef.current); payPollRef.current = null }
+    setPayStatus('idle')
+    setPayQrCode(null)
+    setPayOrderNo(null)
+  }
+
+  async function handlePay() {
+    setPayStatus('loading')
+    setPayError('')
+    try {
+      const body: Record<string, unknown> = {}
+      if (rechargeTab === 'package' && selectedPkgId) {
+        body.package_id = selectedPkgId
+      } else if (rechargeTab === 'direct' && directAmount) {
+        body.amount = Math.round(parseFloat(directAmount) * 100)
+      } else {
+        setPayError(rechargeTab === 'package' ? '请选择套餐' : '请输入金额')
+        setPayStatus('idle')
+        return
+      }
+      const res = await fetch('/api/payment/create', { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) })
+      const data = await res.json()
+      if (!data.success) { setPayError(data.error || '创建订单失败'); setPayStatus('error'); return }
+      setPayQrCode(data.data.qr_code)
+      setPayOrderNo(data.data.order_no)
+      setPayStatus('qr')
+      // 开始轮询订单状态
+      if (payPollRef.current) clearInterval(payPollRef.current)
+      payPollRef.current = setInterval(async () => {
+        try {
+          const sr = await fetch(`/api/payment/status/${data.data.order_no}`, { headers: authHeaders() })
+          const sd = await sr.json()
+          if (sd.success && sd.data.status === 'paid') {
+            if (payPollRef.current) { clearInterval(payPollRef.current); payPollRef.current = null }
+            setPayStatus('success')
+            toast.success(`充值成功！获得 ${sd.data.points} 积分`)
+            fetchUser()
+            setTimeout(() => closeRecharge(), 1500)
+          }
+        } catch {}
+      }, 2000)
+      // 15分钟后停止轮询
+      setTimeout(() => { if (payPollRef.current) { clearInterval(payPollRef.current); payPollRef.current = null } }, 15 * 60 * 1000)
+    } catch { setPayError('网络请求失败'); setPayStatus('error') }
+  }
+
+  useEffect(() => { return () => { if (payPollRef.current) clearInterval(payPollRef.current) } }, [])
 
   /* ===== 侧栏按钮定义 ===== */
   type SidebarBtn = { id: string; icon: React.ReactNode; title: string; page?: 'create' | 'inspire'; onClick?: () => void; href?: string }
@@ -502,6 +588,7 @@ export default function HomePage() {
     { id: 'create', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>, title: '创作', page: 'create' },
     { id: 'inspire', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>, title: '灵感', page: 'inspire' },
     { id: 'notice', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>, title: '公告', onClick: () => setShowNotice(true) },
+    { id: 'recharge', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>, title: '充值', onClick: () => openRecharge() },
   ]
 
   if (!user) return (
@@ -670,8 +757,8 @@ export default function HomePage() {
                   </div>
 
                   {/* 积分显示 */}
-                  <div className="text-[10px]" style={{ color: v('text-muted') }}>
-                    积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span>
+                  <div className="text-[10px] cursor-pointer hover:opacity-80 transition-opacity" style={{ color: v('text-muted') }} onClick={openRecharge} title="点击充值">
+                    积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span> <span className="text-[9px] text-green-500">充值</span>
                   </div>
                 </div>
               </div>
@@ -1295,6 +1382,11 @@ export default function HomePage() {
                 style={{ borderRadius: v('radius-md') }}>
                 {user.can_checkin ? '每日签到' : '今日已签到'}
               </button>
+              <button onClick={() => { setShowUserCenter(false); openRecharge() }}
+                className="w-full py-3 text-white font-bold mb-2 bg-gradient-to-r from-blue-500 to-cyan-500"
+                style={{ borderRadius: v('radius-md') }}>
+                充值积分
+              </button>
               <div className="text-center text-xs mb-4" style={{ color: v('text-muted') }}>签到次数: {user.checkin_count}</div>
               {allowCustomApi && (
                 <div className="flex gap-3">
@@ -1636,6 +1728,146 @@ export default function HomePage() {
             </div>
           </div>
         </>
+      )}
+
+      {/* ===== 充值弹窗 ===== */}
+      {showRecharge && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center">
+          <div className="absolute inset-0 backdrop-blur-sm" style={{ background: v('overlay') }} onClick={closeRecharge}></div>
+          <div className="relative w-full max-w-lg mx-4 shadow-2xl overflow-hidden" style={{ background: v('modal-bg'), border: `1px solid ${v('border')}`, borderRadius: v('panel-radius') }}>
+            {/* 标题栏 */}
+            <div className="flex items-center justify-between p-5 pb-3">
+              <h2 className="text-lg font-bold">充值积分</h2>
+              <button onClick={closeRecharge} className="w-8 h-8 flex items-center justify-center rounded-lg hover:opacity-80" style={{ color: v('text-muted') }}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            {payStatus === 'qr' || payStatus === 'success' ? (
+              /* 二维码 / 成功状态 */
+              <div className="p-6 text-center">
+                {payStatus === 'success' ? (
+                  <div className="py-8">
+                    <div className="text-5xl mb-4">🎉</div>
+                    <p className="text-lg font-bold text-green-500">充值成功</p>
+                    <p className="text-xs mt-2" style={{ color: v('text-muted') }}>积分已到账</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm mb-4" style={{ color: v('text-secondary') }}>请使用支付宝扫描二维码完成支付</p>
+                    {payQrCode && (
+                      <div className="inline-block p-4 bg-white rounded-xl mb-4">
+                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(payQrCode)}`} alt="支付二维码" className="w-48 h-48" />
+                      </div>
+                    )}
+                    <p className="text-[10px] mb-2" style={{ color: v('text-muted') }}>订单号: {payOrderNo}</p>
+                    <div className="flex items-center justify-center gap-2 text-xs" style={{ color: v('text-muted') }}>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                      等待支付...
+                    </div>
+                    <button onClick={() => { setPayStatus('idle'); setPayQrCode(null); if (payPollRef.current) { clearInterval(payPollRef.current); payPollRef.current = null } }}
+                      className="mt-4 px-4 py-2 text-xs" style={{ color: v('text-muted'), border: `1px solid ${v('border')}`, borderRadius: v('radius-sm') }}>返回</button>
+                  </>
+                )}
+              </div>
+            ) : (
+              /* 套餐/直充选择 */
+              <>
+                {/* Tab切换 */}
+                <div className="flex mx-5 mb-3 p-1" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
+                  {([['package', '套餐充值'], ['direct', '直充积分']] as const).map(([tab, label]) => (
+                    <button key={tab} onClick={() => setRechargeTab(tab)} className="flex-1 py-2 text-xs font-medium transition-all"
+                      style={rechargeTab === tab ? { background: v('panel'), borderRadius: v('radius-sm'), boxShadow: '0 1px 3px rgba(0,0,0,0.1)', color: v('text') } : { color: v('text-muted') }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="px-5 pb-5 max-h-[50vh] overflow-y-auto">
+                  {rechargeTab === 'package' ? (
+                    /* 套餐列表 */
+                    <div className="grid grid-cols-2 gap-3 pt-3">
+                      {rechargePackages.map(pkg => (
+                        <button key={pkg.id} onClick={() => setSelectedPkgId(pkg.id)}
+                          className="relative p-4 text-left transition-all hover:scale-[1.02]"
+                          style={{
+                            background: selectedPkgId === pkg.id ? (isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.08)') : v('card'),
+                            border: selectedPkgId === pkg.id ? '2px solid #3b82f6' : `1px solid ${v('border')}`,
+                            borderRadius: v('radius-md'),
+                          }}>
+                          {pkg.badge && (
+                            <span className="absolute top-0 right-0 text-[9px] px-2 py-0.5 rounded-bl-lg rounded-tr-[inherit] text-white font-bold"
+                              style={{ background: pkg.badge === '热门' ? '#ef4444' : pkg.badge === '推荐' ? '#3b82f6' : '#f59e0b' }}>
+                              {pkg.badge}
+                            </span>
+                          )}
+                          <div className="text-xl font-bold text-blue-500">{pkg.points}</div>
+                          <div className="text-[10px] mb-2" style={{ color: v('text-muted') }}>积分</div>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-sm font-bold" style={{ color: v('text') }}>¥{(pkg.price / 100).toFixed(2)}</span>
+                            {pkg.original_price && pkg.original_price > pkg.price && (
+                              <span className="text-[10px] line-through" style={{ color: v('text-muted') }}>¥{(pkg.original_price / 100).toFixed(2)}</span>
+                            )}
+                          </div>
+                          <div className="text-[9px] mt-1" style={{ color: v('text-muted') }}>{pkg.name}</div>
+                        </button>
+                      ))}
+                      {rechargePackages.length === 0 && (
+                        <div className="col-span-2 py-8 text-center text-xs" style={{ color: v('text-muted') }}>暂无套餐，请联系管理员配置</div>
+                      )}
+                    </div>
+                  ) : (
+                    /* 直充 */
+                    <div>
+                      <p className="text-xs mb-3" style={{ color: v('text-secondary') }}>
+                        兑换比例: 1元 = {directRate}积分
+                      </p>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        {[5, 10, 30, 50, 100].map(n => (
+                          <button key={n} onClick={() => setDirectAmount(String(n))}
+                            className="px-3 py-2 text-xs font-medium transition-all"
+                            style={{
+                              background: directAmount === String(n) ? (isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.08)') : v('card'),
+                              border: directAmount === String(n) ? '2px solid #3b82f6' : `1px solid ${v('border')}`,
+                              borderRadius: v('radius-sm'), color: directAmount === String(n) ? '#3b82f6' : v('text'),
+                            }}>
+                            ¥{n}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <input type="number" value={directAmount} onChange={e => setDirectAmount(e.target.value)}
+                          placeholder={`输入金额 (${(directMin / 100).toFixed(0)}-${(directMax / 100).toFixed(0)}元)`}
+                          className="flex-1 px-4 py-3 text-sm outline-none"
+                          style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-md') }} />
+                      </div>
+                      {directAmount && parseFloat(directAmount) > 0 && (
+                        <div className="p-3 mb-3" style={{ background: isDark ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.05)', borderRadius: v('radius-sm') }}>
+                          <p className="text-xs">
+                            支付 <span className="font-bold text-blue-500">¥{parseFloat(directAmount).toFixed(2)}</span>
+                            {' → '}获得 <span className="font-bold text-green-500">{Math.floor(parseFloat(directAmount) * directRate)}</span> 积分
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 错误提示 */}
+                {payError && <div className="mx-5 mb-3 p-2 text-xs text-red-500 text-center" style={{ background: 'rgba(239,68,68,0.1)', borderRadius: v('radius-sm') }}>{payError}</div>}
+
+                {/* 支付按钮 */}
+                <div className="px-5 pb-5">
+                  <button onClick={handlePay} disabled={payStatus === 'loading' || (rechargeTab === 'package' && !selectedPkgId) || (rechargeTab === 'direct' && !directAmount)}
+                    className="w-full py-3 text-white font-bold bg-gradient-to-r from-blue-500 to-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    style={{ borderRadius: v('radius-md') }}>
+                    {payStatus === 'loading' ? '创建订单中...' : '立即支付'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

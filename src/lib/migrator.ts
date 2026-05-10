@@ -183,8 +183,19 @@ async function executeMigration(client: Client, migration: MigrationFile) {
     await client.query('COMMIT')
 
     console.log(`  ✅ V${migration.version} 完成 (${Date.now() - start}ms)`)
-  } catch (error) {
+  } catch (error: unknown) {
     await client.query('ROLLBACK')
+    const pgError = error as { code?: string; message?: string }
+    // 42P07 = relation already exists, 42701 = column already exists
+    // 这些是幂等性问题，标记为已执行并继续
+    if (pgError.code === '42P07' || pgError.code === '42701') {
+      console.log(`  ⚠️ V${migration.version} 对象已存在，标记为已执行`)
+      await client.query(
+        'INSERT INTO _migrations (version, name, checksum, execution_ms) VALUES ($1, $2, $3, $4) ON CONFLICT (version) DO NOTHING',
+        [migration.version, migration.name, checksum, Date.now() - start]
+      )
+      return
+    }
     console.error(`  ❌ V${migration.version} 失败:`, error)
     throw error
   }

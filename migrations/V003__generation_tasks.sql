@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS generation_tasks (
   completed_at TIMESTAMP
 );
 
-CREATE INDEX idx_generation_tasks_user_status ON generation_tasks(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_generation_tasks_user_status ON generation_tasks(user_id, status);

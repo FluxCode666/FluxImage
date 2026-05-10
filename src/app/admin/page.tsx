@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Users, ImageIcon, Megaphone, Plus, Trash2, ArrowLeft, Coins, Settings, Save, Pencil, Cloud, ArrowRightLeft, Server, HardDrive, Sun, Moon, Search, Shield, ShieldOff, UserX, X, Zap, RefreshCw, Minus, ChevronLeft, ChevronRight, Calendar, Palette } from 'lucide-react'
+import { Users, ImageIcon, Megaphone, Plus, Trash2, ArrowLeft, Coins, Settings, Save, Pencil, Cloud, ArrowRightLeft, Server, HardDrive, Sun, Moon, Search, Shield, ShieldOff, UserX, X, Zap, RefreshCw, Minus, ChevronLeft, ChevronRight, Calendar, Palette, CreditCard, BarChart3, Package, DollarSign, ShoppingCart } from 'lucide-react'
 import { LazyImage } from '@/components/ui/lazy-image'
 
 const v = (name: string) => `var(--nb-${name})`
@@ -78,6 +78,21 @@ export default function AdminPage() {
   const [showAddProvider, setShowAddProvider] = useState(false)
   const [editingProvider, setEditingProvider] = useState<ProviderItem | null>(null)
   const [newProvider, setNewProvider] = useState({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] as string[], response_format: 'url' })
+
+  // 支付管理
+  const [payProviders, setPayProviders] = useState<{ id: number; name: string; channel: string; app_id: string; private_key_tail: string; public_key_tail: string; notify_url: string | null; gateway: string; priority: number; is_enabled: boolean }[]>([])
+  const [payPackages, setPayPackages] = useState<{ id: number; name: string; points: number; price: number; original_price: number | null; badge: string | null; is_enabled: boolean; sort_order: number }[]>([])
+  const [payOrders, setPayOrders] = useState<any[]>([])
+  const [payOrdersTotal, setPayOrdersTotal] = useState(0)
+  const [payOrderPage, setPayOrderPage] = useState(0)
+  const [payOrderStatus, setPayOrderStatus] = useState('')
+  const [payStats, setPayStats] = useState<any>(null)
+  const [showAddPayProvider, setShowAddPayProvider] = useState(false)
+  const [newPayProvider, setNewPayProvider] = useState({ name: '', channel: 'alipay', app_id: '', private_key: '', public_key: '', notify_url: '', gateway: '', priority: 0 })
+  const [editingPayProvider, setEditingPayProvider] = useState<{ id: number; name: string; channel: string; app_id: string; private_key: string; public_key: string; notify_url: string; gateway: string; priority: number } | null>(null)
+  const [showAddPackage, setShowAddPackage] = useState(false)
+  const [newPackage, setNewPackage] = useState({ name: '', points: '', price: '', original_price: '', badge: '', sort_order: '0' })
+  const [paySubTab, setPaySubTab] = useState<'providers' | 'packages' | 'orders'>('providers')
 
   const [activeTab, setActiveTab] = useState('users')
   const [settingsTab, setSettingsTab] = useState('qiniu')
@@ -405,11 +420,99 @@ export default function AdminPage() {
     } catch {}
   }
 
+  // ── 支付管理函数 ──
+  async function fetchPayProviders() {
+    try { const res = await fetch('/api/admin/payment/providers', { headers: authHeaders() }); const data = await res.json(); if (data.success) setPayProviders(data.data) } catch {}
+  }
+  async function fetchPayPackages() {
+    try { const res = await fetch('/api/admin/payment/packages', { headers: authHeaders() }); const data = await res.json(); if (data.success) setPayPackages(data.data) } catch {}
+  }
+  async function fetchPayOrders(page = 0) {
+    try {
+      const params = new URLSearchParams({ page: String(page), size: '15' })
+      if (payOrderStatus) params.set('status', payOrderStatus)
+      const res = await fetch(`/api/admin/payment/orders?${params}`, { headers: authHeaders() })
+      const data = await res.json()
+      if (data.success) { setPayOrders(data.data); setPayOrdersTotal(data.total) }
+    } catch {}
+  }
+  async function fetchPayStats() {
+    try { const res = await fetch('/api/admin/payment/stats', { headers: authHeaders() }); const data = await res.json(); if (data.success) setPayStats(data.data) } catch {}
+  }
+  function getDefaultOrigin() {
+    return typeof window !== 'undefined' ? window.location.origin : ''
+  }
+  function buildNotifyUrl(origin: string, channel: string) {
+    const base = (origin || getDefaultOrigin()).replace(/\/+$/, '')
+    return `${base}/api/payment/notify/${channel}`
+  }
+  function extractOriginFromNotifyUrl(notifyUrl: string | null) {
+    if (!notifyUrl) return ''
+    const match = notifyUrl.match(/^(https?:\/\/[^/]+)/)
+    return match ? match[1] : notifyUrl
+  }
+  async function handleAddPayProvider() {
+    if (!newPayProvider.name || !newPayProvider.app_id || !newPayProvider.private_key) { toast.error('名称、APPID和私钥不能为空'); return }
+    const payload = { ...newPayProvider, notify_url: buildNotifyUrl(newPayProvider.notify_url, newPayProvider.channel), gateway: newPayProvider.gateway || undefined }
+    try {
+      const res = await fetch('/api/admin/payment/providers', { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) })
+      const data = await res.json()
+      if (data.success) { toast.success('添加成功'); fetchPayProviders(); setNewPayProvider({ name: '', channel: 'alipay', app_id: '', private_key: '', public_key: '', notify_url: '', gateway: '', priority: 0 }); setShowAddPayProvider(false) }
+      else toast.error(data.error)
+    } catch { toast.error('添加失败') }
+  }
+  async function handleTogglePayProvider(p: typeof payProviders[0]) {
+    try { await fetch(`/api/admin/payment/providers/${p.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ is_enabled: !p.is_enabled }) }); fetchPayProviders() } catch {}
+  }
+  async function handleDeletePayProvider(id: number) {
+    if (!confirm('确定删除该支付渠道？')) return
+    try { await fetch(`/api/admin/payment/providers/${id}`, { method: 'DELETE', headers: authHeaders() }); fetchPayProviders() } catch { toast.error('删除失败') }
+  }
+  function handleStartEditPayProvider(p: typeof payProviders[0]) {
+    setEditingPayProvider({ id: p.id, name: p.name, channel: p.channel, app_id: p.app_id, private_key: '', public_key: '', notify_url: extractOriginFromNotifyUrl(p.notify_url), gateway: p.gateway || '', priority: p.priority })
+    setShowAddPayProvider(false)
+  }
+  async function handleSavePayProvider() {
+    if (!editingPayProvider) return
+    const body: Record<string, unknown> = { name: editingPayProvider.name, channel: editingPayProvider.channel, app_id: editingPayProvider.app_id, notify_url: buildNotifyUrl(editingPayProvider.notify_url, editingPayProvider.channel), gateway: editingPayProvider.gateway || '', priority: editingPayProvider.priority }
+    if (editingPayProvider.private_key) body.private_key = editingPayProvider.private_key
+    if (editingPayProvider.public_key) body.public_key = editingPayProvider.public_key
+    try {
+      const res = await fetch(`/api/admin/payment/providers/${editingPayProvider.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) })
+      const data = await res.json()
+      if (data.success) { toast.success('保存成功'); fetchPayProviders(); setEditingPayProvider(null) }
+      else toast.error(data.error)
+    } catch { toast.error('保存失败') }
+  }
+  async function handleAddPackage() {
+    if (!newPackage.name || !newPackage.points || !newPackage.price) { toast.error('名称、积分和价格不能为空'); return }
+    try {
+      const res = await fetch('/api/admin/payment/packages', { method: 'POST', headers: authHeaders(), body: JSON.stringify(newPackage) })
+      const data = await res.json()
+      if (data.success) { toast.success('添加成功'); fetchPayPackages(); setNewPackage({ name: '', points: '', price: '', original_price: '', badge: '', sort_order: '0' }); setShowAddPackage(false) }
+      else toast.error(data.error)
+    } catch { toast.error('添加失败') }
+  }
+  async function handleTogglePackage(p: typeof payPackages[0]) {
+    try { await fetch(`/api/admin/payment/packages/${p.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ is_enabled: !p.is_enabled }) }); fetchPayPackages() } catch {}
+  }
+  async function handleDeletePackage(id: number) {
+    if (!confirm('确定删除该套餐？')) return
+    try { await fetch(`/api/admin/payment/packages/${id}`, { method: 'DELETE', headers: authHeaders() }); fetchPayPackages() } catch { toast.error('删除失败') }
+  }
+  useEffect(() => {
+    if (activeTab === 'payment') { fetchPayProviders(); fetchPayPackages(); fetchPayOrders() }
+    if (activeTab === 'stats') fetchPayStats()
+  }, [activeTab])
+  useEffect(() => { if (activeTab === 'payment' && paySubTab === 'orders') fetchPayOrders(payOrderPage) }, [payOrderPage, payOrderStatus])
+
   const tabs = [
     { id: 'users', icon: <Users className="w-[18px] h-[18px]" />, title: '用户管理' },
     { id: 'points', icon: <Zap className="w-[18px] h-[18px]" />, title: '积分配置' },
     { id: 'inspirations', icon: <ImageIcon className="w-[18px] h-[18px]" />, title: '灵感管理' },
     { id: 'announcements', icon: <Megaphone className="w-[18px] h-[18px]" />, title: '公告管理' },
+    { id: 'payment', icon: <CreditCard className="w-[18px] h-[18px]" />, title: '支付管理' },
+    { id: 'stats', icon: <BarChart3 className="w-[18px] h-[18px]" />, title: '收入统计' },
     { id: 'settings', icon: <Settings className="w-[18px] h-[18px]" />, title: '系统配置' },
   ]
   const iStyle: React.CSSProperties = { background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm'), padding: '8px 12px', fontSize: '13px', outline: 'none', width: '100%' }
@@ -449,7 +552,7 @@ export default function AdminPage() {
         <div className="p-6 pb-4 shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
           <h1 className="text-xl font-bold">{tabs.find(t => t.id === activeTab)?.title}</h1>
           <p className="text-[11px] mt-1" style={{ color: v('text-muted') }}>
-            {activeTab === 'users' && '管理用户账号、角色与积分'}{activeTab === 'points' && '配置每张图片消耗的积分数量'}{activeTab === 'inspirations' && '管理灵感社区图片'}{activeTab === 'announcements' && '管理系统公告'}{activeTab === 'settings' && '站点展示、API、存储平台与模型管理'}
+            {activeTab === 'users' && '管理用户账号、角色与积分'}{activeTab === 'points' && '配置每张图片消耗的积分数量'}{activeTab === 'inspirations' && '管理灵感社区图片'}{activeTab === 'announcements' && '管理系统公告'}{activeTab === 'payment' && '支付渠道、积分套餐与订单管理'}{activeTab === 'stats' && '收入趋势、渠道分析与套餐销量'}{activeTab === 'settings' && '站点展示、API、存储平台与模型管理'}
           </p>
         </div>
 
@@ -748,6 +851,304 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+          </>}
+
+          {/* ── 支付管理 ── */}
+          {activeTab === 'payment' && <>
+            {/* 子Tab */}
+            <div className="flex gap-2">
+              {([['providers', '支付渠道', CreditCard], ['packages', '积分套餐', Package], ['orders', '订单管理', ShoppingCart]] as const).map(([tab, label, Icon]) => (
+                <button key={tab} onClick={() => setPaySubTab(tab)} className="flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-all"
+                  style={paySubTab === tab ? { background: v('active-bg'), color: v('active-color'), borderRadius: v('radius-sm') } : { color: v('text-muted'), borderRadius: v('radius-sm') }}>
+                  <Icon className="w-3.5 h-3.5" />{label}
+                </button>
+              ))}
+            </div>
+
+            {/* 支付渠道管理 */}
+            {paySubTab === 'providers' && (
+              <SCard title="支付渠道供应商" right={
+                <div className="flex gap-2">
+                  <Btn onClick={() => fetchPayProviders()} outline><RefreshCw className="w-3.5 h-3.5" />刷新</Btn>
+                  <Btn onClick={() => setShowAddPayProvider(!showAddPayProvider)}><Plus className="w-4 h-4" />{showAddPayProvider ? '收起' : '添加渠道'}</Btn>
+                </div>
+              }>
+                {showAddPayProvider && (
+                  <div style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px dashed ${v('border')}`, borderRadius: v('radius-sm'), padding: '16px' }} className="space-y-3 mb-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      <div><Lbl>名称</Lbl><input value={newPayProvider.name} onChange={e => setNewPayProvider(p => ({ ...p, name: e.target.value }))} placeholder="支付宝主号" style={iStyle} /></div>
+                      <div><Lbl>渠道</Lbl><select value={newPayProvider.channel} onChange={e => setNewPayProvider(p => ({ ...p, channel: e.target.value }))} style={iStyle}>
+                        <option value="alipay">支付宝</option><option value="wechat">微信支付</option>
+                      </select></div>
+                      <div><Lbl>APPID</Lbl><input value={newPayProvider.app_id} onChange={e => setNewPayProvider(p => ({ ...p, app_id: e.target.value }))} placeholder="2021..." style={iStyle} /></div>
+                      <div><Lbl>回调域名</Lbl><input value={newPayProvider.notify_url} onChange={e => setNewPayProvider(p => ({ ...p, notify_url: e.target.value }))} placeholder={getDefaultOrigin()} style={iStyle} /></div>
+                      <div><Lbl>优先级</Lbl><input type="number" value={newPayProvider.priority} onChange={e => setNewPayProvider(p => ({ ...p, priority: parseInt(e.target.value) || 0 }))} style={iStyle} /></div>
+                      <div><Lbl>网关地址 <span className="font-normal" style={{ color: v('text-muted') }}>(可选)</span></Lbl><input value={newPayProvider.gateway} onChange={e => setNewPayProvider(p => ({ ...p, gateway: e.target.value }))} placeholder="默认支付宝官方网关" style={iStyle} /></div>
+                    </div>
+                    <div><Lbl>应用私钥</Lbl><textarea value={newPayProvider.private_key} onChange={e => setNewPayProvider(p => ({ ...p, private_key: e.target.value }))} placeholder="MIIEvQIBADANBg..." rows={3} style={{ ...iStyle, resize: 'vertical' as const }} /></div>
+                    <div><Lbl>支付宝公钥</Lbl><textarea value={newPayProvider.public_key} onChange={e => setNewPayProvider(p => ({ ...p, public_key: e.target.value }))} placeholder="MIIBIjANBg..." rows={3} style={{ ...iStyle, resize: 'vertical' as const }} /></div>
+                    <Btn onClick={handleAddPayProvider}><Plus className="w-4 h-4" />确认添加</Btn>
+                  </div>
+                )}
+                {editingPayProvider && (
+                  <div style={{ background: isDark ? 'rgba(59,130,246,0.05)' : 'rgba(59,130,246,0.04)', border: `1px solid rgba(59,130,246,0.3)`, borderRadius: v('radius-sm'), padding: '16px' }} className="space-y-3 mb-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold" style={{ color: '#3b82f6' }}>编辑渠道 #{editingPayProvider.id}</span>
+                      <button onClick={() => setEditingPayProvider(null)} className="w-6 h-6 flex items-center justify-center rounded hover:opacity-80" style={{ color: v('text-muted') }}><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      <div><Lbl>名称</Lbl><input value={editingPayProvider.name} onChange={e => setEditingPayProvider(p => p && ({ ...p, name: e.target.value }))} style={iStyle} /></div>
+                      <div><Lbl>渠道</Lbl><select value={editingPayProvider.channel} onChange={e => setEditingPayProvider(p => p && ({ ...p, channel: e.target.value }))} style={iStyle}>
+                        <option value="alipay">支付宝</option><option value="wechat">微信支付</option>
+                      </select></div>
+                      <div><Lbl>APPID</Lbl><input value={editingPayProvider.app_id} onChange={e => setEditingPayProvider(p => p && ({ ...p, app_id: e.target.value }))} style={iStyle} /></div>
+                      <div><Lbl>回调域名</Lbl><input value={editingPayProvider.notify_url} onChange={e => setEditingPayProvider(p => p && ({ ...p, notify_url: e.target.value }))} placeholder={getDefaultOrigin()} style={iStyle} /></div>
+                      <div><Lbl>优先级</Lbl><input type="number" value={editingPayProvider.priority} onChange={e => setEditingPayProvider(p => p && ({ ...p, priority: parseInt(e.target.value) || 0 }))} style={iStyle} /></div>
+                      <div><Lbl>网关地址 <span className="font-normal" style={{ color: v('text-muted') }}>(可选)</span></Lbl><input value={editingPayProvider.gateway} onChange={e => setEditingPayProvider(p => p && ({ ...p, gateway: e.target.value }))} placeholder="默认支付宝官方网关" style={iStyle} /></div>
+                    </div>
+                    <div><Lbl>应用私钥 <span className="font-normal" style={{ color: v('text-muted') }}>（留空则不修改）</span></Lbl><textarea value={editingPayProvider.private_key} onChange={e => setEditingPayProvider(p => p && ({ ...p, private_key: e.target.value }))} placeholder="留空则保持原密钥不变" rows={3} style={{ ...iStyle, resize: 'vertical' as const }} /></div>
+                    <div><Lbl>支付宝公钥 <span className="font-normal" style={{ color: v('text-muted') }}>（留空则不修改）</span></Lbl><textarea value={editingPayProvider.public_key} onChange={e => setEditingPayProvider(p => p && ({ ...p, public_key: e.target.value }))} placeholder="留空则保持原公钥不变" rows={3} style={{ ...iStyle, resize: 'vertical' as const }} /></div>
+                    <div className="flex gap-2">
+                      <Btn onClick={handleSavePayProvider}><Save className="w-4 h-4" />保存修改</Btn>
+                      <Btn onClick={() => setEditingPayProvider(null)} outline><X className="w-4 h-4" />取消</Btn>
+                    </div>
+                  </div>
+                )}
+                {/* 调度模式 */}
+                <div className="flex items-center gap-3 mb-4">
+                  <Lbl>调度模式</Lbl>
+                  <select value={sysConfig.payment_selection_mode || 'priority'} onChange={e => { setSysConfig(c => ({ ...c, payment_selection_mode: e.target.value })); handleSaveConfig() }} style={{ ...iStyle, width: 'auto' }}>
+                    <option value="priority">按优先级</option><option value="round_robin">轮询</option>
+                  </select>
+                </div>
+                <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
+                  <table className="w-full text-sm">
+                    <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                      {['名称','渠道','APPID','私钥','网关','优先级','状态','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{payProviders.map(p => (
+                      <tr key={p.id} style={{ borderTop: `1px solid ${v('border')}` }}>
+                        <td className="p-3 text-xs font-medium">{p.name}</td>
+                        <td className="p-3"><span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: p.channel === 'alipay' ? 'rgba(59,130,246,0.15)' : 'rgba(16,185,129,0.15)', color: p.channel === 'alipay' ? '#3b82f6' : '#10b981' }}>{p.channel === 'alipay' ? '支付宝' : '微信'}</span></td>
+                        <td className="p-3 font-mono text-[10px]">{p.app_id}</td>
+                        <td className="p-3 text-[10px]" style={{ color: v('text-muted') }}>{p.private_key_tail}</td>
+                        <td className="p-3 text-[10px] max-w-[180px] truncate" title={p.gateway || '默认'} style={{ color: v('text-muted') }}>{p.gateway || '默认'}</td>
+                        <td className="p-3 text-xs">{p.priority}</td>
+                        <td className="p-3"><Toggle checked={p.is_enabled} onChange={() => handleTogglePayProvider(p)} isDark={isDark} /></td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => handleStartEditPayProvider(p)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80" style={{ color: '#3b82f6' }}><Pencil className="w-3 h-3" /></button>
+                            <button onClick={() => handleDeletePayProvider(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80" style={{ color: '#ef4444' }}><Trash2 className="w-3 h-3" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                  {payProviders.length === 0 && <div className="p-8 text-center text-xs" style={{ color: v('text-muted') }}>暂无支付渠道</div>}
+                </div>
+              </SCard>
+            )}
+
+            {/* 积分套餐管理 */}
+            {paySubTab === 'packages' && (
+              <SCard title="积分套餐" right={
+                <div className="flex gap-2">
+                  <Btn onClick={() => fetchPayPackages()} outline><RefreshCw className="w-3.5 h-3.5" />刷新</Btn>
+                  <Btn onClick={() => setShowAddPackage(!showAddPackage)}><Plus className="w-4 h-4" />{showAddPackage ? '收起' : '添加套餐'}</Btn>
+                </div>
+              }>
+                {showAddPackage && (
+                  <div style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px dashed ${v('border')}`, borderRadius: v('radius-sm'), padding: '16px' }} className="space-y-3 mb-4">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      <div><Lbl>套餐名称</Lbl><input value={newPackage.name} onChange={e => setNewPackage(p => ({ ...p, name: e.target.value }))} placeholder="新手礼包" style={iStyle} /></div>
+                      <div><Lbl>积分数</Lbl><input type="number" value={newPackage.points} onChange={e => setNewPackage(p => ({ ...p, points: e.target.value }))} placeholder="100" style={iStyle} /></div>
+                      <div><Lbl>售价（分）</Lbl><input type="number" value={newPackage.price} onChange={e => setNewPackage(p => ({ ...p, price: e.target.value }))} placeholder="1000 = ¥10" style={iStyle} /></div>
+                      <div><Lbl>原价（分，选填）</Lbl><input type="number" value={newPackage.original_price} onChange={e => setNewPackage(p => ({ ...p, original_price: e.target.value }))} placeholder="划线价" style={iStyle} /></div>
+                      <div><Lbl>角标</Lbl><input value={newPackage.badge} onChange={e => setNewPackage(p => ({ ...p, badge: e.target.value }))} placeholder="热门/推荐" style={iStyle} /></div>
+                      <div><Lbl>排序</Lbl><input type="number" value={newPackage.sort_order} onChange={e => setNewPackage(p => ({ ...p, sort_order: e.target.value }))} style={iStyle} /></div>
+                    </div>
+                    <Btn onClick={handleAddPackage}><Plus className="w-4 h-4" />确认添加</Btn>
+                  </div>
+                )}
+                {/* 直充比例配置 */}
+                <div className="flex items-center gap-3 mb-4 p-3" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', borderRadius: v('radius-sm') }}>
+                  <Lbl>直充比例: 1元 =</Lbl>
+                  <input type="number" min="1" value={sysConfig.direct_recharge_rate || '10'}
+                    onChange={e => setSysConfig(c => ({ ...c, direct_recharge_rate: e.target.value }))}
+                    style={{ ...iStyle, width: '80px' }} />
+                  <span className="text-xs" style={{ color: v('text-muted') }}>积分</span>
+                  <Btn onClick={handleSaveConfig}><Save className="w-3.5 h-3.5" />保存</Btn>
+                </div>
+                <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
+                  <table className="w-full text-sm">
+                    <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                      {['名称','积分','售价','原价','角标','排序','状态','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{payPackages.map(p => (
+                      <tr key={p.id} style={{ borderTop: `1px solid ${v('border')}` }}>
+                        <td className="p-3 text-xs font-medium">{p.name}</td>
+                        <td className="p-3 text-xs font-bold text-blue-500">{p.points}</td>
+                        <td className="p-3 text-xs">¥{(p.price / 100).toFixed(2)}</td>
+                        <td className="p-3 text-xs" style={{ color: v('text-muted') }}>{p.original_price ? `¥${(p.original_price / 100).toFixed(2)}` : '-'}</td>
+                        <td className="p-3">{p.badge ? <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>{p.badge}</span> : '-'}</td>
+                        <td className="p-3 text-xs">{p.sort_order}</td>
+                        <td className="p-3"><Toggle checked={p.is_enabled} onChange={() => handleTogglePackage(p)} isDark={isDark} /></td>
+                        <td className="p-3">
+                          <button onClick={() => handleDeletePackage(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80" style={{ color: '#ef4444' }}><Trash2 className="w-3 h-3" /></button>
+                        </td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                  {payPackages.length === 0 && <div className="p-8 text-center text-xs" style={{ color: v('text-muted') }}>暂无套餐</div>}
+                </div>
+              </SCard>
+            )}
+
+            {/* 订单管理 */}
+            {paySubTab === 'orders' && (
+              <SCard title="支付订单" right={
+                <div className="flex items-center gap-2">
+                  <select value={payOrderStatus} onChange={e => { setPayOrderStatus(e.target.value); setPayOrderPage(0) }} style={{ ...iStyle, width: 'auto' }}>
+                    <option value="">全部状态</option>
+                    <option value="pending">待支付</option>
+                    <option value="paid">已支付</option>
+                    <option value="expired">已过期</option>
+                    <option value="failed">失败</option>
+                  </select>
+                  <Btn onClick={() => fetchPayOrders(payOrderPage)} outline><RefreshCw className="w-3.5 h-3.5" />刷新</Btn>
+                </div>
+              }>
+                <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
+                  <table className="w-full text-sm">
+                    <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                      {['订单号','用户','类型','积分','金额','渠道','状态','时间'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>{payOrders.map((o: any) => (
+                      <tr key={o.id} style={{ borderTop: `1px solid ${v('border')}` }}>
+                        <td className="p-3 font-mono text-[10px]">{o.order_no}</td>
+                        <td className="p-3 text-xs">{o.user?.username || '-'}</td>
+                        <td className="p-3 text-xs">{o.package_name}</td>
+                        <td className="p-3 text-xs font-bold text-blue-500">{o.points}</td>
+                        <td className="p-3 text-xs">¥{(o.amount / 100).toFixed(2)}</td>
+                        <td className="p-3"><span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: o.channel === 'alipay' ? 'rgba(59,130,246,0.15)' : 'rgba(16,185,129,0.15)', color: o.channel === 'alipay' ? '#3b82f6' : '#10b981' }}>{o.channel === 'alipay' ? '支付宝' : o.channel}</span></td>
+                        <td className="p-3"><span className="text-[10px] px-2 py-0.5 rounded-full" style={{
+                          background: o.status === 'paid' ? 'rgba(16,185,129,0.15)' : o.status === 'pending' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)',
+                          color: o.status === 'paid' ? '#10b981' : o.status === 'pending' ? '#f59e0b' : '#ef4444',
+                        }}>{o.status === 'paid' ? '已支付' : o.status === 'pending' ? '待支付' : o.status === 'expired' ? '已过期' : '失败'}</span></td>
+                        <td className="p-3 text-[10px]" style={{ color: v('text-muted') }}>{new Date(o.created_at).toLocaleString()}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                  {payOrders.length === 0 && <div className="p-8 text-center text-xs" style={{ color: v('text-muted') }}>暂无订单</div>}
+                </div>
+                {/* 分页 */}
+                {payOrdersTotal > 15 && (
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-[10px]" style={{ color: v('text-muted') }}>共 {payOrdersTotal} 条，第 {payOrderPage + 1}/{Math.ceil(payOrdersTotal / 15)} 页</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => setPayOrderPage(p => Math.max(0, p - 1))} disabled={payOrderPage === 0} className="w-7 h-7 flex items-center justify-center rounded-md disabled:opacity-30" style={{ background: v('hover'), color: v('text-muted') }}><ChevronLeft className="w-4 h-4" /></button>
+                      <button onClick={() => setPayOrderPage(p => p + 1)} disabled={(payOrderPage + 1) * 15 >= payOrdersTotal} className="w-7 h-7 flex items-center justify-center rounded-md disabled:opacity-30" style={{ background: v('hover'), color: v('text-muted') }}><ChevronRight className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                )}
+              </SCard>
+            )}
+          </>}
+
+          {/* ── 收入统计 ── */}
+          {activeTab === 'stats' && payStats && <>
+            {/* 汇总卡片 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: '今日收入', value: `¥${((payStats.summary.today_income || 0) / 100).toFixed(2)}`, sub: `${payStats.summary.today_count} 笔`, color: '#3b82f6' },
+                { label: '本月收入', value: `¥${((payStats.summary.month_income || 0) / 100).toFixed(2)}`, sub: `${payStats.summary.month_count} 笔`, color: '#8b5cf6' },
+                { label: '总收入', value: `¥${((payStats.summary.total_income || 0) / 100).toFixed(2)}`, sub: `${payStats.summary.total_count} 笔`, color: '#10b981' },
+                { label: '总订单', value: payStats.summary.total_count.toLocaleString(), sub: '已支付', color: '#f59e0b' },
+              ].map(s => (
+                <div key={s.label} className="p-4 text-center" style={{ background: v('card'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md') }}>
+                  <p className="text-lg font-bold" style={{ color: s.color }}>{s.value}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: v('text-muted') }}>{s.label}</p>
+                  <p className="text-[9px]" style={{ color: v('text-muted') }}>{s.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* 近30天收入趋势 - SVG折线图 */}
+            <SCard title="近30天收入趋势" right={<Btn onClick={fetchPayStats} outline><RefreshCw className="w-3.5 h-3.5" />刷新</Btn>}>
+              {(() => {
+                const data = payStats.daily_trend || []
+                const maxVal = Math.max(...data.map((d: any) => d.amount), 1)
+                const W = 700, H = 200, PX = 40, PY = 20
+                const points = data.map((d: any, i: number) => ({
+                  x: PX + (i / Math.max(data.length - 1, 1)) * (W - PX * 2),
+                  y: PY + (1 - d.amount / maxVal) * (H - PY * 2),
+                  amount: d.amount, date: d.date,
+                }))
+                const line = points.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ')
+                const area = line + ` L${points[points.length - 1]?.x || W - PX},${H - PY} L${PX},${H - PY} Z`
+                return (
+                  <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: '220px' }}>
+                    <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3"/><stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/></linearGradient></defs>
+                    {/* 网格线 */}
+                    {[0, 0.25, 0.5, 0.75, 1].map(r => (
+                      <g key={r}>
+                        <line x1={PX} y1={PY + r * (H - PY * 2)} x2={W - PX} y2={PY + r * (H - PY * 2)} stroke={isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'} />
+                        <text x={PX - 4} y={PY + r * (H - PY * 2) + 4} textAnchor="end" fontSize="9" fill={isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}>¥{((1 - r) * maxVal / 100).toFixed(0)}</text>
+                      </g>
+                    ))}
+                    <path d={area} fill="url(#areaGrad)" />
+                    <path d={line} fill="none" stroke="#3b82f6" strokeWidth="2" />
+                    {points.map((p: any, i: number) => (
+                      <circle key={i} cx={p.x} cy={p.y} r="3" fill="#3b82f6" opacity={i === points.length - 1 ? 1 : 0.5}>
+                        <title>{p.date}: ¥{(p.amount / 100).toFixed(2)}</title>
+                      </circle>
+                    ))}
+                  </svg>
+                )
+              })()}
+            </SCard>
+
+            {/* 套餐销量排行 */}
+            <SCard title="套餐销量排行">
+              <div className="space-y-2">
+                {(payStats.package_stats || []).map((p: any, i: number) => {
+                  const maxCount = Math.max(...(payStats.package_stats || []).map((x: any) => x.count), 1)
+                  return (
+                    <div key={i} className="flex items-center gap-3">
+                      <span className="text-xs font-medium w-24 truncate">{p.name}</span>
+                      <div className="flex-1 h-6 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+                        <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all" style={{ width: `${(p.count / maxCount) * 100}%` }} />
+                      </div>
+                      <span className="text-[10px] w-16 text-right" style={{ color: v('text-muted') }}>{p.count}笔 ¥{(p.amount / 100).toFixed(0)}</span>
+                    </div>
+                  )
+                })}
+                {(!payStats.package_stats || payStats.package_stats.length === 0) && (
+                  <div className="py-4 text-center text-xs" style={{ color: v('text-muted') }}>暂无销量数据</div>
+                )}
+              </div>
+            </SCard>
+
+            {/* 渠道收入占比 */}
+            {payStats.channel_stats && payStats.channel_stats.length > 0 && (
+              <SCard title="渠道收入占比">
+                <div className="flex gap-4 flex-wrap">
+                  {payStats.channel_stats.map((c: any, i: number) => {
+                    const totalAmount = payStats.channel_stats.reduce((s: number, x: any) => s + (x.amount || 0), 0) || 1
+                    const pct = ((c.amount / totalAmount) * 100).toFixed(1)
+                    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
+                    return (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ background: colors[i % colors.length] }} />
+                        <span className="text-xs">{c.channel === 'alipay' ? '支付宝' : c.channel}</span>
+                        <span className="text-xs font-bold" style={{ color: colors[i % colors.length] }}>{pct}%</span>
+                        <span className="text-[10px]" style={{ color: v('text-muted') }}>¥{(c.amount / 100).toFixed(2)}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </SCard>
+            )}
           </>}
 
           {/* ── 系统配置 ── */}

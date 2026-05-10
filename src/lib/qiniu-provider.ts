@@ -83,6 +83,16 @@ export async function createQiniuProvider(): Promise<StorageProvider> {
       return `${domain}/${key}`
     },
 
+    async fileExists(key: string): Promise<boolean> {
+      try {
+        const domain = config.domain.replace(/\/+$/, '')
+        await axios.head(`${domain}/${key}`, { timeout: 5000 })
+        return true
+      } catch {
+        return false
+      }
+    },
+
     async cleanupOldFiles(days: number): Promise<number> {
       const mac = new qiniu.auth.digest.Mac(config.accessKey, config.secretKey)
       const bucketManager = new qiniu.rs.BucketManager(mac, getZoneConfig())

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { buildPublicUrl } from '@/lib/storage-service'
+import { buildPublicUrl, fileExists } from '@/lib/storage-service'
 
 export async function GET(req: NextRequest) {
   const authResult = authenticateRequest(req)
@@ -13,7 +13,12 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
       take: 50,
     })
-    const data = await Promise.all(rows.map(async r => ({
+
+    // 并发检查文件是否存在，过滤掉 OSS 中不存在的记录
+    const existsChecks = await Promise.all(rows.map(r => fileExists(r.imageUrl)))
+    const validRows = rows.filter((_, i) => existsChecks[i])
+
+    const data = await Promise.all(validRows.map(async r => ({
       id: r.id,
       prompt: r.prompt,
       image_url: await buildPublicUrl(r.imageUrl),

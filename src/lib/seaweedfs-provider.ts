@@ -76,6 +76,15 @@ export async function createSeaweedFSProvider(): Promise<StorageProvider> {
       return `${config.domain}/${key}`
     },
 
+    async fileExists(key: string): Promise<boolean> {
+      try {
+        await axios.head(`${config.filerUrl}/${key}`, { headers: { ...auth }, timeout: 5000 })
+        return true
+      } catch {
+        return false
+      }
+    },
+
     async cleanupOldFiles(days: number): Promise<number> {
       const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000
       let deletedCount = 0
