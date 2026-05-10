@@ -2,7 +2,7 @@
 const nextConfig = {
   output: 'standalone',
   experimental: {
-    serverComponentsExternalPackages: ['sharp', 'nodemailer', 'pg'],
+    serverComponentsExternalPackages: ['sharp', 'nodemailer', 'pg', 'alipay-sdk'],
     instrumentationHook: true,
   },
   images: {
