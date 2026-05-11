@@ -124,9 +124,7 @@ export async function fileExists(key: string): Promise<boolean> {
   }
   const { isLocalFallbackFile } = await import('./local-fallback')
   if (isLocalFallbackFile(key)) {
-    const fs = await import('fs')
-    const path = await import('path')
-    return fs.existsSync(path.join(process.cwd(), 'public/uploads', key))
+    return true
   }
   const provider = await getStorageProvider()
   return provider.fileExists(key)

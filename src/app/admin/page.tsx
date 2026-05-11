@@ -44,7 +44,7 @@ interface ModelItem {
 interface ProviderItem {
   id: number; name: string; api_base_url: string; api_key: string
   priority: number; is_enabled: boolean; supported_models: string[]
-  response_format: string
+  response_format: string; provider_type: string
 }
 
 export default function AdminPage() {
@@ -77,7 +77,7 @@ export default function AdminPage() {
   const [providers, setProviders] = useState<ProviderItem[]>([])
   const [showAddProvider, setShowAddProvider] = useState(false)
   const [editingProvider, setEditingProvider] = useState<ProviderItem | null>(null)
-  const [newProvider, setNewProvider] = useState({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] as string[], response_format: 'url' })
+  const [newProvider, setNewProvider] = useState({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [] as string[], response_format: 'url', provider_type: 'openai' })
 
   // 支付管理
   const [payProviders, setPayProviders] = useState<{ id: number; name: string; channel: string; app_id: string; private_key_tail: string; public_key_tail: string; notify_url: string | null; gateway: string; priority: number; is_enabled: boolean }[]>([])
@@ -309,7 +309,8 @@ export default function AdminPage() {
     } catch {}
   }
   async function handleAddProvider() {
-    if (!newProvider.name || !newProvider.api_base_url || !newProvider.api_key) { toast.error('名称、API 域名和 API Key 不能为空'); return }
+    if (!newProvider.name || !newProvider.api_key) { toast.error('名称和 API Key 不能为空'); return }
+    if (newProvider.provider_type !== 'modelscope' && !newProvider.api_base_url) { toast.error('自定义类型需填写 API 域名'); return }
     try {
       const res = await fetch('/api/admin/providers', {
         method: 'POST', headers: authHeaders(),
@@ -319,7 +320,7 @@ export default function AdminPage() {
       if (data.success) {
         toast.success('供应商添加成功')
         fetchProviders()
-        setNewProvider({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [], response_format: 'url' })
+        setNewProvider({ name: '', api_base_url: '', api_key: '', priority: 0, supported_models: [], response_format: 'url', provider_type: 'openai' })
         setShowAddProvider(false)
       } else toast.error(data.error)
     } catch { toast.error('添加失败') }
@@ -1208,11 +1209,14 @@ export default function AdminPage() {
                   <div style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', border: `1px dashed ${v('border')}`, borderRadius: v('radius-sm'), padding: '16px' }} className="space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div><Lbl>供应商名称</Lbl><input value={newProvider.name} onChange={e => setNewProvider(p => ({ ...p, name: e.target.value }))} placeholder="如：OpenAI 官方" style={iStyle} /></div>
-                      <div><Lbl>API 域名</Lbl><input value={newProvider.api_base_url} onChange={e => setNewProvider(p => ({ ...p, api_base_url: e.target.value }))} placeholder="https://api.openai.com" style={iStyle} /></div>
+                      {newProvider.provider_type === 'modelscope'
+                        ? <div><Lbl>API 域名</Lbl><div style={{ ...iStyle, color: v('text-muted'), cursor: 'not-allowed', fontSize: '12px' }}>内置：https://api-inference.modelscope.cn</div></div>
+                        : <div><Lbl>API 域名</Lbl><input value={newProvider.api_base_url} onChange={e => setNewProvider(p => ({ ...p, api_base_url: e.target.value }))} placeholder="https://api.openai.com" style={iStyle} /></div>}
                       <div><Lbl>API Key</Lbl><input type="password" value={newProvider.api_key} onChange={e => setNewProvider(p => ({ ...p, api_key: e.target.value }))} placeholder="sk-..." style={iStyle} /></div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div><Lbl>优先级（越大越优先）</Lbl><input type="number" value={newProvider.priority} onChange={e => setNewProvider(p => ({ ...p, priority: parseInt(e.target.value) || 0 }))} style={{ ...iStyle, width: '120px' }} /></div>
+                      <div><Lbl>供应商类型</Lbl><select value={newProvider.provider_type} onChange={e => setNewProvider(p => ({ ...p, provider_type: e.target.value, api_base_url: e.target.value === 'modelscope' ? '' : p.api_base_url }))} style={iStyle}><option value="openai">自定义（OpenAI 兼容）</option><option value="modelscope">魔搭社区</option></select></div>
                       <div><Lbl>响应格式</Lbl><select value={newProvider.response_format} onChange={e => setNewProvider(p => ({ ...p, response_format: e.target.value }))} style={iStyle}><option value="url">url</option><option value="b64_json">b64_json</option></select></div>
                       <div>
                         <Lbl>支持的模型（多选，留空或勾选 * 表示支持所有）</Lbl>
@@ -1246,16 +1250,16 @@ export default function AdminPage() {
                 <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
                   <table className="w-full text-sm">
                     <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                      {['名称','API 域名','API Key','优先级','响应格式','支持模型','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                      {['名称','类型','API 域名','API Key','优先级','支持模型','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
                     </tr></thead>
                     <tbody>{providers.map(p => (
                       <tr key={p.id} style={{ borderTop: `1px solid ${v('border')}` }}>
                         {editingProvider?.id === p.id ? <>
                           <td className="p-2"><input value={editingProvider.name} onChange={e => setEditingProvider({ ...editingProvider, name: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
-                          <td className="p-2"><input value={editingProvider.api_base_url} onChange={e => setEditingProvider({ ...editingProvider, api_base_url: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
+                          <td className="p-2"><select value={editingProvider.provider_type || 'openai'} onChange={e => setEditingProvider({ ...editingProvider, provider_type: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }}><option value="openai">自定义</option><option value="modelscope">魔搭社区</option></select></td>
+                          <td className="p-2">{editingProvider.provider_type === 'modelscope' ? <span style={{ fontSize: '11px', color: v('text-muted') }}>内置地址</span> : <input value={editingProvider.api_base_url} onChange={e => setEditingProvider({ ...editingProvider, api_base_url: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} />}</td>
                           <td className="p-2"><input type="password" value={editingProvider.api_key} onChange={e => setEditingProvider({ ...editingProvider, api_key: e.target.value })} placeholder="不修改请留空" style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input type="number" value={editingProvider.priority} onChange={e => setEditingProvider({ ...editingProvider, priority: parseInt(e.target.value) || 0 })} style={{ ...iStyle, width: '72px', padding: '4px 8px' }} /></td>
-                          <td className="p-2"><select value={editingProvider.response_format || 'url'} onChange={e => setEditingProvider({ ...editingProvider, response_format: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }}><option value="url">url</option><option value="b64_json">b64_json</option></select></td>
                           <td className="p-2">
                             <div className="flex flex-wrap gap-1">
                               <label className="flex items-center gap-0.5 text-[10px] cursor-pointer">
@@ -1285,10 +1289,10 @@ export default function AdminPage() {
                           </div></td>
                         </> : <>
                           <td className="p-3 text-xs font-medium">{p.name}</td>
-                          <td className="p-3 text-xs font-mono" style={{ color: v('text-secondary') }}>{p.api_base_url}</td>
+                          <td className="p-3"><span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: p.provider_type === 'modelscope' ? 'rgba(34,197,94,0.15)' : 'rgba(59,130,246,0.15)', color: p.provider_type === 'modelscope' ? '#16a34a' : '#3b82f6' }}>{p.provider_type === 'modelscope' ? '魔搭社区' : '自定义'}</span></td>
+                          <td className="p-3 text-xs font-mono" style={{ color: v('text-secondary') }}>{p.provider_type === 'modelscope' ? <span style={{ color: v('text-muted'), fontStyle: 'italic' }}>内置地址</span> : p.api_base_url}</td>
                           <td className="p-3 text-xs font-mono" style={{ color: v('text-muted') }}>{p.api_key ? '••••••' + p.api_key.slice(-4) : '-'}</td>
                           <td className="p-3"><span className="text-xs font-bold" style={{ color: '#3b82f6' }}>{p.priority}</span></td>
-                          <td className="p-3"><span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: p.response_format === 'b64_json' ? 'rgba(168,85,247,0.15)' : 'rgba(59,130,246,0.15)', color: p.response_format === 'b64_json' ? '#a855f7' : '#3b82f6' }}>{p.response_format || 'url'}</span></td>
                           <td className="p-3">
                             <div className="flex flex-wrap gap-1">
                               {p.supported_models.includes('*')

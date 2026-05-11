@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { authenticateRequest, requireAdmin } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { buildPublicUrl } from '@/lib/storage-service'
+import { buildPublicUrl, fileExists } from '@/lib/storage-service'
 
 export async function GET(req: NextRequest) {
   const authResult = authenticateRequest(req)
@@ -11,7 +11,10 @@ export async function GET(req: NextRequest) {
 
   try {
     const rows = await prisma.inspiration.findMany({ orderBy: { id: 'desc' } })
-    const data = await Promise.all(rows.map(async r => ({ ...r, url: await buildPublicUrl(r.url) })))
+    // 过滤掉 OSS 中不存在的文件
+    const existsChecks = await Promise.all(rows.map(r => fileExists(r.url)))
+    const validRows = rows.filter((_, i) => existsChecks[i])
+    const data = await Promise.all(validRows.map(async r => ({ ...r, url: await buildPublicUrl(r.url) })))
     return NextResponse.json({ success: true, data })
   } catch (error) {
     return NextResponse.json({ success: false, error: '获取灵感失败' }, { status: 500 })

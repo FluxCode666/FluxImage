@@ -111,6 +111,7 @@ export interface ProviderInfo {
   isEnabled: boolean
   supportedModels: string[] // modelId 数组，["*"] 表示支持所有
   responseFormat: string // 'url' | 'b64_json'
+  providerType: string // 'openai' | 'modelscope'
 }
 
 export async function getEnabledModels(): Promise<ModelInfo[]> {
@@ -168,7 +169,7 @@ export async function getModelConfig(modelId: string): Promise<ModelInfo | null>
 
 // ── 供应商查询 ──────────────────────────────────────
 
-function parseProviderRow(r: { id: number; name: string; apiBaseUrl: string; apiKey: string; priority: number; isEnabled: boolean; supportedModels: string; responseFormat: string; createdAt: Date; updatedAt: Date }): ProviderInfo {
+function parseProviderRow(r: { id: number; name: string; apiBaseUrl: string; apiKey: string; priority: number; isEnabled: boolean; supportedModels: string; responseFormat: string; providerType?: string; createdAt: Date; updatedAt: Date }): ProviderInfo {
   let models: string[] = []
   try { models = JSON.parse(r.supportedModels) } catch { models = [] }
   return {
@@ -180,6 +181,7 @@ function parseProviderRow(r: { id: number; name: string; apiBaseUrl: string; api
     isEnabled: r.isEnabled,
     supportedModels: models,
     responseFormat: r.responseFormat || 'url',
+    providerType: r.providerType || 'openai',
   }
 }
 

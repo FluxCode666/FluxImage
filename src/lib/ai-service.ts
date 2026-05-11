@@ -199,6 +199,104 @@ class AIService {
   }
 
 
+  async generateImageModelScope(params: {
+    prompt: string
+    model?: string
+    width?: number | string
+    height?: number | string
+    n?: number
+    apiKey: string
+    baseUrl: string
+  }) {
+    const {
+      prompt, model = 'Tongyi-MAI/Z-Image-Turbo',
+      width = 1024, height = 1024, n = 1,
+      apiKey, baseUrl,
+    } = params
+
+    const finalWidth = parseInt(String(width)) || 1024
+    const finalHeight = parseInt(String(height)) || 1024
+
+    console.log('🎨 开始[魔搭生图]:', { model, width: finalWidth, height: finalHeight })
+
+    try {
+      const timeout = await this.getTimeout()
+
+      // Step 1: 提交异步任务
+      const submitResponse = await this.withRetry(
+        () => axios.post(
+          `${baseUrl}/v1/images/generations`,
+          { model, prompt, height: finalHeight, width: finalWidth, num_inference_steps: 9, guidance_scale: 0.0, n },
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+              'X-ModelScope-Async-Mode': 'true',
+            },
+            timeout: 30000,
+          }
+        ),
+        2,
+        '[魔搭生图-提交]'
+      )
+
+      // 如果是同步返回（已包含图片数据），直接处理
+      if (submitResponse.data?.data && Array.isArray(submitResponse.data.data)) {
+        return { success: true as const, data: submitResponse.data }
+      }
+
+      const taskId = submitResponse.data?.task_id || submitResponse.data?.id
+      if (!taskId) throw new Error('未获取到任务ID，响应: ' + JSON.stringify(submitResponse.data).slice(0, 200))
+
+      console.log(`📋 [魔搭生图] 任务已提交: ${taskId}`)
+
+      // Step 2: 轮询任务状态
+      const maxAttempts = Math.max(Math.floor(timeout / 5000), 12)
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise(r => setTimeout(r, 5000))
+
+        const statusResponse = await axios.get(
+          `${baseUrl}/v1/tasks/${taskId}`,
+          {
+            headers: { Authorization: `Bearer ${apiKey}`, 'X-ModelScope-Task-Type': 'image_generation' },
+            timeout: 15000,
+          }
+        )
+
+        const status = (statusResponse.data?.task_status || statusResponse.data?.status || '').toUpperCase()
+        console.log(`🔍 [魔搭生图] 任务 ${taskId} 状态: ${status} (${i + 1}/${maxAttempts})`)
+
+        if (status === 'SUCCEED' || status === 'SUCCEEDED' || status === 'COMPLETED') {
+          const output = statusResponse.data?.output
+          const rawImages = statusResponse.data?.output_images || output?.images || []
+          let imageUrl: string | undefined
+          if (rawImages.length > 0) {
+            imageUrl = typeof rawImages[0] === 'string' ? rawImages[0] : rawImages[0]?.url
+          }
+          if (!imageUrl && output?.url) imageUrl = String(output.url)
+          if (!imageUrl) throw new Error('任务完成但未获取到图片URL')
+
+          return {
+            success: true as const,
+            data: {
+              data: [{ url: imageUrl, width: finalWidth, height: finalHeight, size: `${finalWidth}x${finalHeight}` }],
+            },
+          }
+        }
+
+        if (status === 'FAILED' || status === 'ERROR' || status === 'CANCELLED') {
+          const errMsg = statusResponse.data?.message || statusResponse.data?.error || status
+          throw new Error(`魔搭任务失败: ${errMsg}`)
+        }
+      }
+
+      throw new Error(`魔搭任务超时（已等待 ${(maxAttempts * 5)}s）`)
+    } catch (error) {
+      console.error('❌ [魔搭生图]失败:', error)
+      return { success: false as const, error: this.formatError(error) }
+    }
+  }
+
   async generateTitleAndCategory(prompt: string, apiKey: string, baseUrl: string): Promise<{ title: string; category: string }> {
     const CATEGORIES = ['人物', '风景', '动漫', '写实', '抽象', '科幻', '美食', '动物', '建筑', '其他']
     const fallback = { title: prompt.slice(0, 30), category: '其他' }
@@ -250,13 +348,26 @@ class AIService {
     const { providers, ...rest } = params
     const errors: string[] = []
     for (const provider of providers) {
-      console.log(`🔄 尝试供应商: ${provider.name} (priority=${provider.priority})`)
-      const result = await this.generateImage({
-        ...rest,
-        apiKey: provider.apiKey,
-        baseUrl: provider.apiBaseUrl,
-        responseFormat: provider.responseFormat || 'url',
-      })
+      console.log(`🔄 尝试供应商: ${provider.name} (priority=${provider.priority}, type=${provider.providerType || 'openai'})`)
+      let result: Awaited<ReturnType<typeof this.generateImage>>
+      if (provider.providerType === 'modelscope') {
+        result = await this.generateImageModelScope({
+          prompt: rest.prompt,
+          model: rest.model,
+          width: rest.width,
+          height: rest.height,
+          n: rest.n,
+          apiKey: provider.apiKey,
+          baseUrl: provider.apiBaseUrl,
+        })
+      } else {
+        result = await this.generateImage({
+          ...rest,
+          apiKey: provider.apiKey,
+          baseUrl: provider.apiBaseUrl,
+          responseFormat: provider.responseFormat || 'url',
+        })
+      }
       if (result.success) {
         return { ...result, usedProvider: provider.name }
       }
@@ -282,6 +393,11 @@ class AIService {
     const { providers, ...rest } = params
     const errors: string[] = []
     for (const provider of providers) {
+      if (provider.providerType === 'modelscope') {
+        console.warn(`⚠️ 供应商 ${provider.name} 为 modelscope 类型，暂不支持图生图，跳过`)
+        errors.push(`[${provider.name}] modelscope 供应商不支持图生图`)
+        continue
+      }
       console.log(`🔄 尝试供应商: ${provider.name} (priority=${provider.priority})`)
       const result = await this.editImage({
         ...rest,

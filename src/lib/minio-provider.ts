@@ -76,6 +76,9 @@ export async function createMinioProvider(): Promise<StorageProvider> {
 
     buildPublicUrl(key: string): string {
       const domain = config.domain.replace(/\/+$/, '')
+      if (domain.endsWith(`/${config.bucket}`)) {
+        return `${domain}/${key}`
+      }
       return `${domain}/${config.bucket}/${key}`
     },
 

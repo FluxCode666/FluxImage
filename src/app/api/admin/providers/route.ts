@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
           is_enabled: p.isEnabled,
           supported_models: supportedModels,
           response_format: p.responseFormat || 'url',
+          provider_type: (p as unknown as { providerType?: string }).providerType || 'openai',
           created_at: p.createdAt,
           updated_at: p.updatedAt,
         }
@@ -43,16 +44,23 @@ export async function POST(req: NextRequest) {
   if (adminCheck) return adminCheck
 
   try {
-    const { name, api_base_url, api_key, priority, is_enabled, supported_models, response_format } = await req.json()
+    const { name, api_base_url, api_key, priority, is_enabled, supported_models, response_format, provider_type } = await req.json()
 
-    if (!name || !api_base_url || !api_key) {
-      return NextResponse.json({ success: false, error: '名称、API 域名和 API Key 不能为空' }, { status: 400 })
+    const resolvedBaseUrl = provider_type === 'modelscope'
+      ? 'https://api-inference.modelscope.cn'
+      : api_base_url
+
+    if (!name || !api_key) {
+      return NextResponse.json({ success: false, error: '名称和 API Key 不能为空' }, { status: 400 })
+    }
+    if (provider_type !== 'modelscope' && !resolvedBaseUrl) {
+      return NextResponse.json({ success: false, error: '自定义类型需填写 API 域名' }, { status: 400 })
     }
 
-    await prisma.apiProvider.create({
+    const created = await prisma.apiProvider.create({
       data: {
         name,
-        apiBaseUrl: api_base_url,
+        apiBaseUrl: resolvedBaseUrl || '',
         apiKey: api_key,
         priority: priority ?? 0,
         isEnabled: is_enabled !== false,
@@ -60,6 +68,9 @@ export async function POST(req: NextRequest) {
         responseFormat: response_format || 'url',
       },
     })
+    if (provider_type) {
+      await prisma.$executeRaw`UPDATE api_providers SET provider_type = ${provider_type} WHERE id = ${created.id}`
+    }
 
     invalidateConfigCache()
     return NextResponse.json({ success: true, message: '供应商添加成功' }, { status: 201 })

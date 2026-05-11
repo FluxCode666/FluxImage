@@ -225,6 +225,7 @@ export default function HomePage() {
   const inspScrollRef = useRef<HTMLDivElement>(null)
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const logoutMenuRef = useRef<HTMLDivElement>(null)
+  const modelDropdownRef = useRef<HTMLDivElement>(null)
   const [showRecharge, setShowRecharge] = useState(false)
   const [rechargeTab, setRechargeTab] = useState<'package' | 'direct'>('package')
   const [rechargePackages, setRechargePackages] = useState<{ id: number; name: string; points: number; price: number; original_price: number | null; badge: string | null }[]>([])
@@ -272,6 +273,14 @@ export default function HomePage() {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showLogoutMenu])
+  useEffect(() => {
+    if (!modelOpen) return
+    const handler = (e: MouseEvent) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) setModelOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [modelOpen])
 
   async function fetchModels() {
     try {
@@ -713,7 +722,7 @@ export default function HomePage() {
                 <div className="px-3 py-2 flex items-center justify-between" style={{ borderTop: `1px solid ${v('border')}` }}>
                   <div className="flex items-center gap-2">
                     {/* 模型选择 */}
-                    <div className="relative">
+                    <div className="relative" ref={modelDropdownRef}>
                       <button onClick={() => setModelOpen(!modelOpen)}
                         className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium hover:bg-blue-500/10 transition-all"
                         style={{ borderRadius: v('radius-sm'), color: v('text-secondary') }}>
@@ -887,7 +896,7 @@ export default function HomePage() {
               {/* 模型选择 */}
               <div>
                 <label className="text-xs font-bold mb-2 block uppercase pl-1" style={{ color: v('text-muted') }}>AI Model</label>
-                <div className="relative">
+                <div className="relative" ref={modelDropdownRef}>
                   <button onClick={() => setModelOpen(!modelOpen)}
                     className="w-full px-4 py-3 flex items-center justify-between hover:border-blue-500/50 transition-all text-left"
                     style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md') }}>

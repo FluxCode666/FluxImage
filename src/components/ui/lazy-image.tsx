@@ -23,6 +23,7 @@ export function LazyImage({
   ...rest
 }: LazyImageProps) {
   const [loaded, setLoaded] = useState(false)
+  const [errored, setErrored] = useState(false)
   const [inView, setInView] = useState(false)
   const sentinelRef = useRef<HTMLImageElement | null>(null)
 
@@ -49,6 +50,8 @@ export function LazyImage({
     return () => observer.disconnect()
   }, [rootMargin])
 
+  if (errored) return null
+
   return (
     <img
       {...rest}
@@ -63,6 +66,7 @@ export function LazyImage({
         background: loaded ? undefined : 'linear-gradient(135deg, rgba(120,120,120,0.06) 0%, rgba(120,120,120,0.12) 50%, rgba(120,120,120,0.06) 100%)',
       }}
       onLoad={() => setLoaded(true)}
+      onError={() => setErrored(true)}
       draggable={false}
     />
   )

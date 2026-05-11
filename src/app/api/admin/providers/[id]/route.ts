@@ -16,14 +16,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() }
     if (body.name !== undefined) updateData.name = body.name
-    if (body.api_base_url !== undefined) updateData.apiBaseUrl = body.api_base_url
+    if (body.api_base_url !== undefined) {
+      updateData.apiBaseUrl = body.provider_type === 'modelscope'
+        ? 'https://api-inference.modelscope.cn'
+        : body.api_base_url
+    } else if (body.provider_type === 'modelscope') {
+      updateData.apiBaseUrl = 'https://api-inference.modelscope.cn'
+    }
     if (body.api_key !== undefined) updateData.apiKey = body.api_key
     if (body.priority !== undefined) updateData.priority = body.priority
     if (body.is_enabled !== undefined) updateData.isEnabled = body.is_enabled
     if (body.supported_models !== undefined) updateData.supportedModels = JSON.stringify(body.supported_models)
     if (body.response_format !== undefined) updateData.responseFormat = body.response_format
 
-    await prisma.apiProvider.update({ where: { id }, data: updateData })
+    await prisma.apiProvider.update({ where: { id }, data: updateData as Parameters<typeof prisma.apiProvider.update>[0]['data'] })
+    if (body.provider_type !== undefined) {
+      await prisma.$executeRaw`UPDATE api_providers SET provider_type = ${body.provider_type} WHERE id = ${id}`
+    }
     invalidateConfigCache()
 
     return NextResponse.json({ success: true, message: '供应商配置已更新' })
