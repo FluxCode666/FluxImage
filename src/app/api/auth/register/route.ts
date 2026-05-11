@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/db'
 import { signToken } from '@/lib/auth'
 import { getVerificationCode, deleteVerificationCode } from '@/lib/redis'
+import { isRegisterCaptchaRequired } from '@/lib/config-service'
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,13 +13,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: '用户名、邮箱和密码都不能为空' }, { status: 400 })
     }
 
-    // 验证码校验
-    const savedCode = await getVerificationCode(email)
-    if (!savedCode) {
-      return NextResponse.json({ success: false, error: '请先点击获取验证码' }, { status: 400 })
-    }
-    if (String(savedCode) !== String(code)) {
-      return NextResponse.json({ success: false, error: '验证码错误' }, { status: 400 })
+    // 验证码校验（仅在后台开启时强制校验）
+    const captchaRequired = await isRegisterCaptchaRequired()
+    if (captchaRequired) {
+      const savedCode = await getVerificationCode(email)
+      if (!savedCode) {
+        return NextResponse.json({ success: false, error: '请先点击获取验证码' }, { status: 400 })
+      }
+      if (String(savedCode) !== String(code)) {
+        return NextResponse.json({ success: false, error: '验证码错误' }, { status: 400 })
+      }
     }
 
     if (password.length < 6) {

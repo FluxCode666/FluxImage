@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
 import { authenticateRequest, requireAdmin } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
@@ -14,8 +15,13 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     const body = await req.json()
     const updateData: Record<string, unknown> = {}
 
+    if (body.username !== undefined && body.username.trim()) updateData.username = body.username.trim()
+    if (body.email !== undefined && body.email.trim()) updateData.email = body.email.trim()
     if (body.role !== undefined) updateData.role = body.role
     if (body.drawing_points !== undefined) updateData.drawingPoints = parseInt(body.drawing_points)
+    if (body.password && body.password.length >= 6) {
+      updateData.password = await bcrypt.hash(body.password, 10)
+    }
 
     await prisma.user.update({ where: { id }, data: updateData })
     return NextResponse.json({ success: true, message: '用户信息已更新' })

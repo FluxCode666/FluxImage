@@ -41,6 +41,7 @@ export async function PUT(req: NextRequest) {
       'site_name', 'site_subtitle',
       'prompt_max_length',
       'payment_selection_mode', 'direct_recharge_rate', 'direct_recharge_min', 'direct_recharge_max',
+      'register_require_captcha', 'checkin_points',
     ]
 
     for (const key of allowedKeys) {

@@ -87,6 +87,13 @@ export async function isCustomApiAllowed(): Promise<boolean> {
   return val !== 'false' // 默认 true
 }
 
+// ── 注册验证码开关 ────────────────────────────────────
+
+export async function isRegisterCaptchaRequired(): Promise<boolean> {
+  const val = await getSystemConfig('register_require_captcha')
+  return val !== 'false' // 默认 true（需要验证码）
+}
+
 // ── 模型配置 ──────────────────────────────────────
 
 export interface ModelInfo {

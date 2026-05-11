@@ -6,12 +6,14 @@ export interface ClientSiteConfig {
   siteName: string
   siteSubtitle: string
   promptMaxLength: number
+  registerRequireCaptcha: boolean
 }
 
 export const DEFAULT_CLIENT_SITE_CONFIG: ClientSiteConfig = {
   siteName: 'FluxImage',
   siteSubtitle: 'AI Creative Studio',
   promptMaxLength: 5000,
+  registerRequireCaptcha: true,
 }
 
 export function useSiteConfig(updateTitle = true): ClientSiteConfig {
@@ -30,6 +32,7 @@ export function useSiteConfig(updateTitle = true): ClientSiteConfig {
           siteName: data.data?.site_name?.trim() || DEFAULT_CLIENT_SITE_CONFIG.siteName,
           siteSubtitle: data.data?.site_subtitle?.trim() || DEFAULT_CLIENT_SITE_CONFIG.siteSubtitle,
           promptMaxLength: parseInt(data.data?.prompt_max_length) || DEFAULT_CLIENT_SITE_CONFIG.promptMaxLength,
+          registerRequireCaptcha: data.data?.register_require_captcha !== false,
         })
       } catch {
         if (mounted) setConfig(DEFAULT_CLIENT_SITE_CONFIG)

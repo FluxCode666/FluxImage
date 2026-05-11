@@ -13,7 +13,7 @@ import { useSiteConfig } from '@/lib/use-site-config'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { siteName, siteSubtitle } = useSiteConfig()
+  const { siteName, siteSubtitle, registerRequireCaptcha } = useSiteConfig()
   const [loginEmail, setLoginEmail] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const [regUsername, setRegUsername] = useState('')
@@ -70,7 +70,8 @@ export default function LoginPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault()
-    if (!regUsername || !regEmail || !regPassword || !regCode) { toast.error('请填写完整信息'); return }
+    if (!regUsername || !regEmail || !regPassword) { toast.error('请填写完整信息'); return }
+    if (registerRequireCaptcha && !regCode) { toast.error('请填写验证码'); return }
     setLoading(true)
     try {
       const res = await fetch('/api/auth/register', {
@@ -161,6 +162,7 @@ export default function LoginPage() {
                         value={regPassword} onChange={e => setRegPassword(e.target.value)} />
                     </div>
                   </div>
+                  {registerRequireCaptcha && (
                   <div className="space-y-2">
                     <Label>验证码</Label>
                     <div className="flex gap-2">
@@ -171,6 +173,7 @@ export default function LoginPage() {
                       </Button>
                     </div>
                   </div>
+                  )}
                   <Button type="submit" className="w-full gap-2" disabled={loading}>
                     {loading ? <Sparkles className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
                     注册

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Users, ImageIcon, Megaphone, Plus, Trash2, ArrowLeft, Coins, Settings, Save, Pencil, Cloud, ArrowRightLeft, Server, HardDrive, Sun, Moon, Search, Shield, ShieldOff, UserX, X, Zap, RefreshCw, Minus, ChevronLeft, ChevronRight, Calendar, Palette, CreditCard, BarChart3, Package, DollarSign, ShoppingCart } from 'lucide-react'
+import { Users, ImageIcon, Megaphone, Plus, Trash2, ArrowLeft, Coins, Settings, Save, Pencil, Cloud, ArrowRightLeft, Server, HardDrive, Sun, Moon, Search, Shield, ShieldOff, UserX, X, Zap, RefreshCw, Minus, ChevronLeft, ChevronRight, Calendar, Palette, CreditCard, BarChart3, Package, DollarSign, ShoppingCart, UserPlus } from 'lucide-react'
 import { LazyImage } from '@/components/ui/lazy-image'
 
 const v = (name: string) => `var(--nb-${name})`
@@ -63,6 +63,10 @@ export default function AdminPage() {
   const [dialogPointsAmount, setDialogPointsAmount] = useState('')
   const [userPage, setUserPage] = useState(0)
   const USER_PAGE_SIZE = 15
+  const [showUserDialog, setShowUserDialog] = useState(false)
+  const [editingUser, setEditingUser] = useState<UserItem | null>(null)
+  const emptyUserForm = { username: '', email: '', password: '', role: 'user', drawing_points: '10' }
+  const [userForm, setUserForm] = useState(emptyUserForm)
 
   // 系统配置
   const [sysConfig, setSysConfig] = useState<Record<string, string>>({})
@@ -191,6 +195,42 @@ export default function AdminPage() {
       if (data.success) { toast.success('用户已删除'); setUsers(us => us.filter(x => x.id !== u.id)) }
       else toast.error(data.error)
     } catch { toast.error('删除失败') }
+  }
+  function openAddUserDialog() {
+    setEditingUser(null)
+    setUserForm(emptyUserForm)
+    setShowUserDialog(true)
+  }
+  function openEditUserDialog(u: UserItem) {
+    setEditingUser(u)
+    setUserForm({ username: u.username, email: u.email, password: '', role: u.role, drawing_points: String(u.drawing_points) })
+    setShowUserDialog(true)
+  }
+  async function handleSaveUserDialog() {
+    if (!userForm.username.trim() || !userForm.email.trim()) { toast.error('用户名和邮箱不能为空'); return }
+    if (!editingUser && !userForm.password) { toast.error('创建用户必须填写密码'); return }
+    if (userForm.password && userForm.password.length < 6) { toast.error('密码至少6位'); return }
+    try {
+      if (editingUser) {
+        const body: Record<string, string | number> = {
+          username: userForm.username, email: userForm.email,
+          role: userForm.role, drawing_points: userForm.drawing_points,
+        }
+        if (userForm.password) body.password = userForm.password
+        const res = await fetch(`/api/admin/users/${editingUser.id}`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) })
+        const data = await res.json()
+        if (data.success) { toast.success('用户信息已更新'); setShowUserDialog(false); fetchUsers() }
+        else toast.error(data.error)
+      } else {
+        const res = await fetch('/api/admin/users', {
+          method: 'POST', headers: authHeaders(),
+          body: JSON.stringify({ username: userForm.username, email: userForm.email, password: userForm.password, role: userForm.role, drawing_points: userForm.drawing_points }),
+        })
+        const data = await res.json()
+        if (data.success) { toast.success('用户创建成功'); setShowUserDialog(false); fetchUsers() }
+        else toast.error(data.error)
+      }
+    } catch { toast.error('操作失败') }
   }
   async function handleSaveModelPoints(m: ModelItem, newCost: number) {
     try {
@@ -589,6 +629,7 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <Btn onClick={fetchUsers} outline><RefreshCw className="w-3.5 h-3.5" />刷新</Btn>
+                <Btn onClick={openAddUserDialog}><UserPlus className="w-3.5 h-3.5" />添加用户</Btn>
               </div>
 
               {/* 用户表格 */}
@@ -626,10 +667,16 @@ export default function AdminPage() {
                         <div className="flex items-center gap-1"><Calendar className="w-3 h-3" />{new Date(u.created_at).toLocaleDateString()}</div>
                       </td>
                       <td className="p-3">
-                        <button onClick={() => handleDeleteUser(u)} title="删除用户"
-                          className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80 transition-opacity" style={{ color: '#ef4444' }}>
-                          <UserX className="w-4 h-4" />
-                        </button>
+                        <div className="flex gap-1">
+                          <button onClick={() => openEditUserDialog(u)} title="编辑用户"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80 transition-opacity" style={{ color: v('text-muted') }}>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => handleDeleteUser(u)} title="删除用户"
+                            className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80 transition-opacity" style={{ color: '#ef4444' }}>
+                            <UserX className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}</tbody>
@@ -649,6 +696,54 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
+
+              {/* 新增/编辑用户对话框 */}
+              {showUserDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+                  <div className="w-[460px]" style={{ background: v('panel'), borderRadius: v('radius-md'), boxShadow: '0 25px 50px rgba(0,0,0,0.25)', padding: '24px' }}>
+                    <div className="flex items-center justify-between mb-5">
+                      <h3 className="text-sm font-bold flex items-center gap-2">
+                        <UserPlus className="w-4 h-4" style={{ color: '#3b82f6' }} />
+                        {editingUser ? `编辑用户 #${editingUser.id}` : '添加用户'}
+                      </h3>
+                      <button onClick={() => setShowUserDialog(false)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:opacity-80" style={{ color: v('text-muted') }}><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Lbl>用户名</Lbl>
+                          <input value={userForm.username} onChange={e => setUserForm(f => ({ ...f, username: e.target.value }))} placeholder="昵称" style={iStyle} />
+                        </div>
+                        <div>
+                          <Lbl>邮箱</Lbl>
+                          <input type="email" value={userForm.email} onChange={e => setUserForm(f => ({ ...f, email: e.target.value }))} placeholder="user@email.com" style={iStyle} />
+                        </div>
+                      </div>
+                      <div>
+                        <Lbl>密码{editingUser ? '（留空则不修改）' : ''}</Lbl>
+                        <input type="password" value={userForm.password} onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} placeholder={editingUser ? '留空不修改密码' : '至少6位'} style={iStyle} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Lbl>角色</Lbl>
+                          <select value={userForm.role} onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))} style={iStyle}>
+                            <option value="user">普通用户</option>
+                            <option value="admin">管理员</option>
+                          </select>
+                        </div>
+                        <div>
+                          <Lbl>初始积分</Lbl>
+                          <input type="number" min="0" value={userForm.drawing_points} onChange={e => setUserForm(f => ({ ...f, drawing_points: e.target.value }))} placeholder="10" style={iStyle} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-5">
+                      <Btn onClick={() => setShowUserDialog(false)} outline>取消</Btn>
+                      <Btn onClick={handleSaveUserDialog}><Save className="w-4 h-4" />{editingUser ? '保存修改' : '创建用户'}</Btn>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 积分调整对话框 */}
               {pointsDialogUser && (
@@ -1338,6 +1433,13 @@ export default function AdminPage() {
                       <p className="text-[10px] mt-0.5" style={{ color: v('text-muted') }}>关闭后用户无法配置自己的 API Key</p>
                     </div>
                     <Toggle checked={sysConfig.allow_custom_api !== 'false'} onChange={() => setSysConfig(c => ({ ...c, allow_custom_api: String(c.allow_custom_api === 'false') }))} isDark={isDark} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-medium">注册需要邮箱验证码</p>
+                      <p className="text-[10px] mt-0.5" style={{ color: v('text-muted') }}>关闭后用户注册无需验证邮箱</p>
+                    </div>
+                    <Toggle checked={sysConfig.register_require_captcha !== 'false'} onChange={() => setSysConfig(c => ({ ...c, register_require_captcha: String(c.register_require_captcha === 'false') }))} isDark={isDark} />
                   </div>
                   <Btn onClick={handleSaveConfig}><Save className="w-4 h-4" />保存配置</Btn>
                 </div>
