@@ -15,6 +15,7 @@ export async function GET() {
         icon: m.icon,
         desc: m.description,
         points_cost: m.pointsCost,
+        prompt_max_length: m.promptMaxLength ?? null,
       })),
     })
   } catch (error) {

@@ -21,7 +21,7 @@ interface InspirationItem { id: number; url: string; prompt: string | null; mode
 function getToken() { return typeof window !== 'undefined' ? localStorage.getItem('token') : null }
 function authHeaders() { return { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' } }
 
-interface ModelOption { id: string; name: string; icon: string; desc: string; points_cost?: number }
+interface ModelOption { id: string; name: string; icon: string; desc: string; points_cost?: number; prompt_max_length?: number | null }
 
 const PASTEL_COLORS = ['#F8D7CC', '#D4EDDA', '#E8DEF3', '#FDEBD0', '#D1ECF1', '#F5C6CB']
 
@@ -175,7 +175,7 @@ export default function HomePage() {
   const [inspirations, setInspirations] = useState<InspirationItem[]>([])
   const [works, setWorks] = useState<Creation[]>([])
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([])
+  const [uploadedFiles, setUploadedFiles] = useState<(File | null)[]>([])
   const [previewUrls, setPreviewUrls] = useState<string[]>([])
   const [referenceKeys, setReferenceKeys] = useState<(string | null)[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -448,7 +448,9 @@ export default function HomePage() {
     if (previewUrls.length >= 3) { toast.error('参考图最多3张'); return }
     setPreviewUrls(prev => [...prev, imageUrl])
     setReferenceKeys(prev => [...prev, imageKey || null])
-    setUploadedFiles(prev => [...prev]) // keep length in sync placeholder
+    setUploadedFiles(prev => [...prev, null]) // null placeholder keeps index in sync with referenceKeys
+    setCurrentPage('create')
+    setMobileTab('create')
     toast.success('已添加为参考图')
   }
   function handleLogout() { localStorage.clear(); sessionStorage.clear(); router.push('/login') }
@@ -519,6 +521,7 @@ export default function HomePage() {
   }, [currentPage])
 
   const currentModel = MODELS.find(m => m.id === model) || MODELS[0] || { id: '', name: '加载中...', icon: '⏳', desc: '' }
+  const effectivePromptMaxLength = currentModel?.prompt_max_length ?? promptMaxLength
 
   /* ===== 充值相关函数 ===== */
   async function openRecharge() {
@@ -712,10 +715,10 @@ export default function HomePage() {
                     className="w-full p-4 pb-2 resize-none text-sm leading-relaxed focus:outline-none bg-transparent min-h-[80px]"
                     style={{ color: v('text'), maxHeight: '40vh' }}
                     placeholder="描述你想生成的画面..."
-                    maxLength={promptMaxLength}
+                    maxLength={effectivePromptMaxLength}
                     onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleGenerate() }}
                   />
-                  <div className="absolute bottom-1 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/{promptMaxLength}</div>
+                  <div className="absolute bottom-1 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/{effectivePromptMaxLength}</div>
                 </div>
 
                 {/* 底部工具栏 */}
@@ -859,6 +862,10 @@ export default function HomePage() {
                             className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
                           </button>
+                          <button title="用作参考图" onClick={(e) => { e.stopPropagation(); useAsReference(item.image_url, item.image_key) }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                          </button>
                           <button title="分享" onClick={(e) => { e.stopPropagation(); handleShareWork(item.id) }}
                             className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
@@ -957,8 +964,8 @@ export default function HomePage() {
                   <textarea value={prompt} onChange={e => setPrompt(e.target.value)}
                     className="w-full h-full p-3 resize-none text-sm leading-relaxed focus:outline-none focus:border-blue-500 transition-colors"
                     style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-md') }}
-                    placeholder="描述你想生成的画面..." maxLength={promptMaxLength} />
-                  <div className="absolute bottom-2 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/{promptMaxLength}</div>
+                    placeholder="描述你想生成的画面..." maxLength={effectivePromptMaxLength} />
+                  <div className="absolute bottom-2 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/{effectivePromptMaxLength}</div>
                 </div>
               </div>
 
@@ -1174,6 +1181,11 @@ export default function HomePage() {
                     <div>
                       <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>操作</label>
                       <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => { useAsReference(selectedWork.image_url, selectedWork.image_key); setSelectedWork(null) }}
+                          className="col-span-2 py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
+                          style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: v('radius-md') }}>
+                          🖼️ 用作参考图
+                        </button>
                         <button onClick={() => applyPrompt(selectedWork.prompt)}
                           className="py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
                           style={{ background: v('btn-primary'), borderRadius: v('radius-md') }}>
@@ -1484,6 +1496,11 @@ export default function HomePage() {
                   <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.created_at ? new Date(selectedWork.created_at).toLocaleString() : '-'}</div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 pt-2">
+                  <button onClick={() => { useAsReference(selectedWork.image_url, selectedWork.image_key); setSelectedWork(null) }}
+                    className="col-span-2 py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
+                    style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: v('radius-md') }}>
+                    🖼️ 用作参考图
+                  </button>
                   <button onClick={() => applyPrompt(selectedWork.prompt)}
                     className="py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
                     style={{ background: v('btn-primary'), borderRadius: v('radius-md') }}>
@@ -1584,6 +1601,13 @@ export default function HomePage() {
                   style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
                   ⬇️ 下载图片
                 </button>
+                {mobileDetail.type === 'work' && (
+                  <button onClick={() => { useAsReference((mobileDetail.data as Creation).image_url, (mobileDetail.data as Creation).image_key); setMobileDetail(null) }}
+                    className="col-span-2 py-3 text-white text-xs font-bold transition-all active:scale-95"
+                    style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: v('radius-md') }}>
+                    🖼️ 用作参考图
+                  </button>
+                )}
                 {mobileDetail.type === 'work' && (
                   <button onClick={() => { handleShareWork((mobileDetail.data as Creation).id); setMobileDetail(null) }}
                     className="py-3 text-xs font-bold transition-all active:scale-95 text-green-500"

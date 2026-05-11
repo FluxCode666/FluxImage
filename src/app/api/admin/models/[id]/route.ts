@@ -21,6 +21,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.is_enabled !== undefined) updateData.isEnabled = body.is_enabled
     if (body.sort_order !== undefined) updateData.sortOrder = body.sort_order
     if (body.points_cost !== undefined) updateData.pointsCost = body.points_cost
+    if ('prompt_max_length' in body) updateData.promptMaxLength = body.prompt_max_length != null ? parseInt(body.prompt_max_length) || null : null
 
     await prisma.modelConfig.update({ where: { id }, data: updateData })
     invalidateConfigCache()

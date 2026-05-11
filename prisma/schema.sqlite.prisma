@@ -100,9 +100,10 @@ model ModelConfig {
   description String   @default("")
   isEnabled   Boolean  @default(true) @map("is_enabled")
   sortOrder   Int      @default(0) @map("sort_order")
-  pointsCost  Int      @default(1) @map("points_cost")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @default(now()) @map("updated_at")
+  pointsCost      Int      @default(1) @map("points_cost")
+  promptMaxLength Int?     @map("prompt_max_length")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
 
   @@map("model_config")
 }

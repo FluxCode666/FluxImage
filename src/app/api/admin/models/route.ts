@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
         is_enabled: m.isEnabled,
         sort_order: m.sortOrder,
         points_cost: m.pointsCost,
+        prompt_max_length: m.promptMaxLength ?? null,
       })),
     })
   } catch (error) {
@@ -37,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (adminCheck) return adminCheck
 
   try {
-    const { model_id, display_name, icon, description, is_enabled, sort_order, points_cost } = await req.json()
+    const { model_id, display_name, icon, description, is_enabled, sort_order, points_cost, prompt_max_length } = await req.json()
 
     if (!model_id || !display_name) {
       return NextResponse.json({ success: false, error: '模型ID和名称不能为空' }, { status: 400 })
@@ -57,6 +58,7 @@ export async function POST(req: NextRequest) {
         isEnabled: is_enabled !== false,
         sortOrder: sort_order ?? 0,
         pointsCost: points_cost ?? 1,
+        promptMaxLength: prompt_max_length != null ? parseInt(prompt_max_length) || null : null,
       },
     })
 

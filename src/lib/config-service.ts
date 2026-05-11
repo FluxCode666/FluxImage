@@ -105,6 +105,7 @@ export interface ModelInfo {
   isEnabled: boolean
   sortOrder: number
   pointsCost: number
+  promptMaxLength: number | null
 }
 
 // ── 供应商配置 ──────────────────────────────────────
@@ -139,6 +140,7 @@ export async function getEnabledModels(): Promise<ModelInfo[]> {
     isEnabled: r.isEnabled,
     sortOrder: r.sortOrder,
     pointsCost: r.pointsCost,
+    promptMaxLength: r.promptMaxLength ?? null,
   }))
 
   setCache('models:enabled', models)
@@ -156,6 +158,7 @@ export async function getAllModels(): Promise<ModelInfo[]> {
     isEnabled: r.isEnabled,
     sortOrder: r.sortOrder,
     pointsCost: r.pointsCost,
+    promptMaxLength: r.promptMaxLength ?? null,
   }))
 }
 
@@ -171,6 +174,7 @@ export async function getModelConfig(modelId: string): Promise<ModelInfo | null>
     isEnabled: row.isEnabled,
     sortOrder: row.sortOrder,
     pointsCost: row.pointsCost,
+    promptMaxLength: row.promptMaxLength ?? null,
   }
 }
 

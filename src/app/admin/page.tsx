@@ -39,7 +39,7 @@ interface InspirationItem { id: number; url: string; prompt: string | null }
 interface AnnouncementItem { id: number; content: string; isActive: boolean; isImportant: boolean; createdAt: string }
 interface ModelItem {
   id: number; model_id: string; display_name: string; icon: string; description: string
-  is_enabled: boolean; sort_order: number; points_cost: number
+  is_enabled: boolean; sort_order: number; points_cost: number; prompt_max_length: number | null
 }
 interface ProviderItem {
   id: number; name: string; api_base_url: string; api_key: string
@@ -75,7 +75,7 @@ export default function AdminPage() {
   const [editingModel, setEditingModel] = useState<ModelItem | null>(null)
   const [showAddModel, setShowAddModel] = useState(false)
   const [editedCosts, setEditedCosts] = useState<Record<number, number>>({})
-  const [newModel, setNewModel] = useState({ model_id: '', display_name: '', icon: '🤖', description: '', points_cost: 1 })
+  const [newModel, setNewModel] = useState({ model_id: '', display_name: '', icon: '🤖', description: '', points_cost: 1, prompt_max_length: null as number | null })
 
   // 供应商
   const [providers, setProviders] = useState<ProviderItem[]>([])
@@ -334,7 +334,7 @@ export default function AdminPage() {
       if (data.success) {
         toast.success('模型添加成功')
         fetchModels()
-        setNewModel({ model_id: '', display_name: '', icon: '🤖', description: '', points_cost: 1 })
+        setNewModel({ model_id: '', display_name: '', icon: '🤖', description: '', points_cost: 1, prompt_max_length: null })
         setShowAddModel(false)
       } else toast.error(data.error)
     } catch { toast.error('添加失败') }
@@ -1571,14 +1571,17 @@ export default function AdminPage() {
                       <div><Lbl>图标</Lbl><input value={newModel.icon} onChange={e => setNewModel(m => ({ ...m, icon: e.target.value }))} placeholder="🎨" style={{ ...iStyle, width: '80px' }} /></div>
                       <div><Lbl>积分消耗</Lbl><input type="number" value={newModel.points_cost} onChange={e => setNewModel(m => ({ ...m, points_cost: parseInt(e.target.value) || 1 }))} style={{ ...iStyle, width: '80px' }} /></div>
                     </div>
-                    <div><Lbl>描述</Lbl><input value={newModel.description} onChange={e => setNewModel(m => ({ ...m, description: e.target.value }))} placeholder="模型描述" style={iStyle} /></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div><Lbl>描述</Lbl><input value={newModel.description} onChange={e => setNewModel(m => ({ ...m, description: e.target.value }))} placeholder="模型描述" style={iStyle} /></div>
+                      <div><Lbl>字数限制（留空使用全局配置）</Lbl><input type="number" min="1" value={newModel.prompt_max_length ?? ''} onChange={e => setNewModel(m => ({ ...m, prompt_max_length: e.target.value ? parseInt(e.target.value) || null : null }))} placeholder="全局" style={{ ...iStyle, width: '128px' }} /></div>
+                    </div>
                     <Btn onClick={handleAddModel}><Plus className="w-4 h-4" />确认添加</Btn>
                   </div>
                 )}
                 <div style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm'), overflow: 'hidden' }}>
                   <table className="w-full text-sm">
                     <thead><tr style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                      {['图标','模型ID','名称','描述','积分','排序','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
+                      {['图标','模型ID','名称','描述','积分','字数限制','排序','启用','操作'].map(h => <th key={h} className="p-3 text-left text-[10px] uppercase tracking-wider font-bold" style={{ color: v('text-muted') }}>{h}</th>)}
                     </tr></thead>
                     <tbody>{models.map(m => (
                       <tr key={m.id} style={{ borderTop: `1px solid ${v('border')}` }}>
@@ -1588,6 +1591,7 @@ export default function AdminPage() {
                           <td className="p-2"><input value={editingModel.display_name} onChange={e => setEditingModel({ ...editingModel, display_name: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input value={editingModel.description} onChange={e => setEditingModel({ ...editingModel, description: e.target.value })} style={{ ...iStyle, padding: '4px 8px' }} /></td>
                           <td className="p-2"><input type="number" value={editingModel.points_cost} onChange={e => setEditingModel({ ...editingModel, points_cost: parseInt(e.target.value) || 1 })} style={{ ...iStyle, width: '64px', padding: '4px 8px' }} /></td>
+                          <td className="p-2"><input type="number" min="1" value={editingModel.prompt_max_length ?? ''} onChange={e => setEditingModel({ ...editingModel, prompt_max_length: e.target.value ? parseInt(e.target.value) || null : null })} placeholder="全局" style={{ ...iStyle, width: '72px', padding: '4px 8px' }} /></td>
                           <td className="p-2"><input type="number" value={editingModel.sort_order} onChange={e => setEditingModel({ ...editingModel, sort_order: parseInt(e.target.value) || 0 })} style={{ ...iStyle, width: '64px', padding: '4px 8px' }} /></td>
                           <td className="p-2"><Toggle checked={editingModel.is_enabled} onChange={() => setEditingModel({ ...editingModel, is_enabled: !editingModel.is_enabled })} isDark={isDark} /></td>
                           <td className="p-2"><div className="flex gap-1">
@@ -1600,6 +1604,7 @@ export default function AdminPage() {
                           <td className="p-3 text-xs font-medium">{m.display_name}</td>
                           <td className="p-3 text-xs" style={{ color: v('text-muted') }}>{m.description}</td>
                           <td className="p-3 text-xs">{m.points_cost}</td>
+                          <td className="p-3 text-xs">{m.prompt_max_length ?? <span style={{ color: v('text-muted') }}>全局</span>}</td>
                           <td className="p-3 text-xs">{m.sort_order}</td>
                           <td className="p-3"><Toggle checked={m.is_enabled} onChange={() => handleToggleModelEnabled(m)} isDark={isDark} /></td>
                           <td className="p-3"><div className="flex gap-1">
