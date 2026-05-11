@@ -26,5 +26,22 @@ export async function register() {
     } catch (error) {
       console.error('❌ 上传重试消费者启动失败:', error)
     }
+    try {
+      const { prisma } = await import('@/lib/db')
+      const stuckTimeout = 10 * 60 * 1000 // 超过 10 分钟仍在 pending/processing 视为卡住
+      const cutoff = new Date(Date.now() - stuckTimeout)
+      const fixed = await prisma.generationTask.updateMany({
+        where: {
+          status: { in: ['pending', 'processing'] },
+          createdAt: { lt: cutoff },
+        },
+        data: { status: 'failed', error: '任务超时（服务重启导致中断）' },
+      })
+      if (fixed.count > 0) {
+        console.log(`🧹 [启动清理] 修复 ${fixed.count} 个卡住的生图任务`)
+      }
+    } catch (error) {
+      console.error('❌ 启动清理卡住任务失败:', error)
+    }
   }
 }
