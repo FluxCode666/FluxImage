@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useSiteConfig } from '@/lib/use-site-config'
@@ -239,6 +239,24 @@ export default function HomePage() {
   const [payStatus, setPayStatus] = useState<'idle' | 'loading' | 'qr' | 'success' | 'error'>('idle')
   const [payError, setPayError] = useState('')
   const payPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // 响应式瀑布流列数
+  const [masonryCols, setMasonryCols] = useState(2)
+  useEffect(() => {
+    const update = () => {
+      const w = window.innerWidth
+      setMasonryCols(w >= 1280 ? 6 : w >= 1024 ? 5 : w >= 768 ? 4 : w >= 640 ? 3 : 2)
+    }
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
+  function toMasonryColumns<T>(items: T[], cols: number): T[][] {
+    const result: T[][] = Array.from({ length: cols }, () => [])
+    items.forEach((item, i) => result[i % cols].push(item))
+    return result
+  }
 
   useEffect(() => {
     document.documentElement.className = theme
@@ -834,53 +852,64 @@ export default function HomePage() {
                   <h2 className="text-lg font-bold">我的作品</h2>
                   <span className="text-xs" style={{ color: v('text-muted') }}>Ctrl+Enter 快速生成</span>
                 </div>
-                <div className="columns-2 lg:columns-3 xl:columns-4 gap-4">
-                  {activeTasks.map(task => (
-                    <div key={`ntask-${task.id}`} className="break-inside-avoid mb-4">
-                      <TaskCard task={task} isDark={isDark} />
-                    </div>
-                  ))}
-                  {works.length > 0 ? works.map((item, idx) => (
-                    <div key={item.id} className="break-inside-avoid mb-4 overflow-hidden group hover:-translate-y-1 transition-all cursor-pointer"
-                      style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}
-                      onClick={() => { if (window.innerWidth < 1024) setMobileDetail({ type: 'work', data: item }); else setSelectedWork(item) }}>
-                      <div className="relative overflow-hidden">
-                        <LazyImage src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
-                          style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
-                          <p className="text-[10px] text-gray-100 line-clamp-2 leading-relaxed">{item.prompt || '无提示词'}</p>
+                {(() => {
+                  const allItems: { type: 'task' | 'work'; task?: any; work?: Creation; idx: number }[] = [
+                    ...activeTasks.map((t, i) => ({ type: 'task' as const, task: t, idx: i })),
+                    ...works.map((w, i) => ({ type: 'work' as const, work: w, idx: i }))
+                  ]
+                  if (allItems.length === 0) return <div className="w-full text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
+                  const cols = toMasonryColumns(allItems, masonryCols)
+                  return (
+                    <div className="flex gap-4 items-start">
+                      {cols.map((col, ci) => (
+                        <div key={ci} className="flex-1 min-w-0 flex flex-col gap-4">
+                          {col.map(item => {
+                            if (item.type === 'task') return <div key={`ntask-${item.task.id}`}><TaskCard task={item.task} isDark={isDark} /></div>
+                            const work = item.work!; const idx = item.idx
+                            return (
+                              <div key={work.id} className="overflow-hidden group hover:-translate-y-1 transition-all cursor-pointer"
+                                style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}
+                                onClick={() => { if (window.innerWidth < 1024) setMobileDetail({ type: 'work', data: work }); else setSelectedWork(work) }}>
+                                <div className="relative overflow-hidden">
+                                  <LazyImage src={work.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
+                                    style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
+                                    <p className="text-[10px] text-gray-100 line-clamp-2 leading-relaxed">{work.prompt || '无提示词'}</p>
+                                  </div>
+                                </div>
+                                <div className="px-2 pb-2 pt-1 flex items-center justify-between">
+                                  <span className="text-[9px] truncate max-w-[40%]" style={{ color: v('text-muted') }}>{work.model || ''}</span>
+                                  <div className="flex items-center gap-0.5">
+                                    <button title="下载" onClick={(e) => { e.stopPropagation(); handleDownloadImage(work.image_url) }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    </button>
+                                    <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(work.prompt) }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                    </button>
+                                    <button title="用作参考图" onClick={(e) => { e.stopPropagation(); useAsReference(work.image_url, work.image_key) }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                    </button>
+                                    <button title="分享" onClick={(e) => { e.stopPropagation(); handleShareWork(work.id) }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                                    </button>
+                                    <button title="删除" onClick={(e) => { e.stopPropagation(); handleDeleteWork(work.id) }}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-red-400/60">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
-                      </div>
-                      <div className="px-2 pb-2 pt-1 flex items-center justify-between">
-                        <span className="text-[9px] truncate max-w-[40%]" style={{ color: v('text-muted') }}>{item.model || ''}</span>
-                        <div className="flex items-center gap-0.5">
-                          <button title="下载" onClick={(e) => { e.stopPropagation(); handleDownloadImage(item.image_url) }}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                          </button>
-                          <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(item.prompt) }}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                          </button>
-                          <button title="用作参考图" onClick={(e) => { e.stopPropagation(); useAsReference(item.image_url, item.image_key) }}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                          </button>
-                          <button title="分享" onClick={(e) => { e.stopPropagation(); handleShareWork(item.id) }}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
-                          </button>
-                          <button title="删除" onClick={(e) => { e.stopPropagation(); handleDeleteWork(item.id) }}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-red-400/60">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                          </button>
-                        </div>
-                      </div>
+                      ))}
                     </div>
-                  )) : activeTasks.length === 0 ? (
-                    <div className="w-full text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
-                  ) : null}
-                </div>
+                  )
+                })()}
               </div>
             </div>
           </div>
@@ -1026,47 +1055,60 @@ export default function HomePage() {
                   <h2 className="text-sm font-bold">我的作品</h2>
                   <span className="text-[10px]" style={{ color: v('text-muted') }}>积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span></span>
                 </div>
-                <div className="columns-2 gap-3">
-                  {activeTasks.map(task => (
-                    <TaskCard key={`mtask-${task.id}`} task={task} isDark={isDark} />
-                  ))}
-                  {works.length > 0 ? works.map((item, idx) => (
-                    <div key={item.id} className="break-inside-avoid mb-3 overflow-hidden group"
-                      style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
-                      <div className="relative overflow-hidden cursor-pointer" onClick={() => setLightboxUrl(item.image_url)}>
-                        <LazyImage src={item.image_url} alt="" className="w-full h-auto block"
-                          style={{ borderRadius: v('radius-md'), margin: '6px', width: 'calc(100% - 12px)' }} />
-                      </div>
-                      <div className="px-2 pb-2 pt-1 flex items-center justify-between">
-                        <span className="text-[9px] truncate max-w-[40%]" style={{ color: v('text-muted') }}>{item.model || ''}</span>
-                        <div className="flex items-center gap-0.5">
-                          <button title="下载" onClick={() => handleDownloadImage(item.image_url)}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                          </button>
-                          <button title="复制提示词" onClick={() => handleCopyPrompt(item.prompt)}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                          </button>
-                          <button title="用作参考图" onClick={() => useAsReference(item.image_url, item.image_key)}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                          </button>
-                          <button title="分享到社区" onClick={() => handleShareWork(item.id)}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
-                          </button>
-                          <button title="删除" onClick={() => handleDeleteWork(item.id)}
-                            className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-red-400/60">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                          </button>
+                {(() => {
+                  const allItems: { type: 'task' | 'work'; task?: any; work?: Creation; idx: number }[] = [
+                    ...activeTasks.map((t, i) => ({ type: 'task' as const, task: t, idx: i })),
+                    ...works.map((w, i) => ({ type: 'work' as const, work: w, idx: i }))
+                  ]
+                  if (allItems.length === 0) return <div className="w-full text-center text-xs py-6" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
+                  const cols = toMasonryColumns(allItems, 2)
+                  return (
+                    <div className="flex gap-3 items-start">
+                      {cols.map((col, ci) => (
+                        <div key={ci} className="flex-1 min-w-0 flex flex-col gap-3">
+                          {col.map(item => {
+                            if (item.type === 'task') return <TaskCard key={`mtask-${item.task.id}`} task={item.task} isDark={isDark} />
+                            const work = item.work!; const idx = item.idx
+                            return (
+                              <div key={work.id} className="overflow-hidden group"
+                                style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
+                                <div className="relative overflow-hidden cursor-pointer" onClick={() => setLightboxUrl(work.image_url)}>
+                                  <LazyImage src={work.image_url} alt="" className="w-full h-auto block"
+                                    style={{ borderRadius: v('radius-md'), margin: '6px', width: 'calc(100% - 12px)' }} />
+                                </div>
+                                <div className="px-2 pb-2 pt-1 flex items-center justify-between">
+                                  <span className="text-[9px] truncate max-w-[40%]" style={{ color: v('text-muted') }}>{work.model || ''}</span>
+                                  <div className="flex items-center gap-0.5">
+                                    <button title="下载" onClick={() => handleDownloadImage(work.image_url)}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                    </button>
+                                    <button title="复制提示词" onClick={() => handleCopyPrompt(work.prompt)}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                    </button>
+                                    <button title="用作参考图" onClick={() => useAsReference(work.image_url, work.image_key)}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                    </button>
+                                    <button title="分享到社区" onClick={() => handleShareWork(work.id)}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                                    </button>
+                                    <button title="删除" onClick={() => handleDeleteWork(work.id)}
+                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-red-400/60">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  )) : activeTasks.length === 0 ? (
-                    <div className="col-span-2 text-center text-xs py-6" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
-                  ) : null}
-                </div>
+                  )
+                })()}
               </div>
             </div>
             <div className="p-6" style={{ borderTop: `1px solid ${v('border')}` }}>
@@ -1089,48 +1131,64 @@ export default function HomePage() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-6 lg:p-10" onClick={() => setSelectedWork(null)}>
-              <div className="columns-3 gap-4">
-                {activeTasks.map(task => (
-                  <TaskCard key={`task-${task.id}`} task={task} isDark={isDark} />
-                ))}
-                {works.length > 0 ? works.map((item, idx) => (
-                  <div key={item.id} className="break-inside-avoid mb-4 overflow-hidden group hover:-translate-y-1 transition-all"
-                    style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
-                    <div className="relative overflow-hidden cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedWork(item) }}>
-                      <LazyImage src={item.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
-                        style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
-                        <p className="text-xs text-gray-100 line-clamp-2 leading-relaxed">{item.prompt || '无提示词'}</p>
+              {(() => {
+                const classicCols = masonryCols >= 6 ? 6 : masonryCols >= 4 ? 4 : 3
+                const allItems: { type: 'task' | 'work'; task?: any; work?: Creation; idx: number }[] = [
+                  ...activeTasks.map((t, i) => ({ type: 'task' as const, task: t, idx: i })),
+                  ...works.map((w, i) => ({ type: 'work' as const, work: w, idx: i }))
+                ]
+                if (allItems.length === 0) return <div className="w-full text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
+                const cols = toMasonryColumns(allItems, classicCols)
+                return (
+                  <div className="flex gap-4 items-start">
+                    {cols.map((col, ci) => (
+                      <div key={ci} className="flex-1 min-w-0 flex flex-col gap-4">
+                        {col.map(item => {
+                          if (item.type === 'task') return <TaskCard key={`task-${item.task.id}`} task={item.task} isDark={isDark} />
+                          const work = item.work!; const idx = item.idx
+                          return (
+                            <div key={work.id} className="overflow-hidden group hover:-translate-y-1 transition-all"
+                              style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
+                              <div className="relative overflow-hidden cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedWork(work) }}>
+                                <LazyImage src={work.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
+                                  style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
+                                  <p className="text-xs text-gray-100 line-clamp-2 leading-relaxed">{work.prompt || '无提示词'}</p>
+                                </div>
+                              </div>
+                              <div className="px-2 pb-2 pt-1 flex items-center justify-between">
+                                <span className="text-[10px] truncate max-w-[50%]" style={{ color: v('text-muted') }}>{work.model || ''}</span>
+                                <div className="flex items-center gap-0.5">
+                                  <button title="下载" onClick={(e) => { e.stopPropagation(); handleDownloadImage(work.image_url) }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                  </button>
+                                  <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(work.prompt) }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                  </button>
+                                  <button title="用作参考图" onClick={(e) => { e.stopPropagation(); useAsReference(work.image_url, work.image_key) }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                  </button>
+                                  <button title="分享到社区" onClick={(e) => { e.stopPropagation(); handleShareWork(work.id) }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                                  </button>
+                                  <button title="删除" onClick={(e) => { e.stopPropagation(); handleDeleteWork(work.id) }}
+                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-xs text-red-400/60 hover:text-red-400">
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                    </div>
-                    <div className="px-2 pb-2 pt-1 flex items-center justify-between">
-                      <span className="text-[10px] truncate max-w-[50%]" style={{ color: v('text-muted') }}>{item.model || ''}</span>
-                      <div className="flex items-center gap-0.5">
-                        <button title="下载" onClick={(e) => { e.stopPropagation(); handleDownloadImage(item.image_url) }}
-                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                        </button>
-                        <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(item.prompt) }}
-                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                        </button>
-                        <button title="用作参考图" onClick={(e) => { e.stopPropagation(); useAsReference(item.image_url, item.image_key) }}
-                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                        </button>
-                        <button title="分享到社区" onClick={(e) => { e.stopPropagation(); handleShareWork(item.id) }}
-                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
-                        </button>
-                        <button title="删除" onClick={(e) => { e.stopPropagation(); handleDeleteWork(item.id) }}
-                          className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-xs text-red-400/60 hover:text-red-400">
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                        </button>
-                      </div>
-                    </div>
+                    ))}
                   </div>
-                )) : activeTasks.length === 0 ? <div className="col-span-3 text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div> : null}
-              </div>
+                )
+              })()}
             </div>
           </div>
 
@@ -1270,37 +1328,47 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* 灵感瀑布流 */}
+            {/* 灵感列表 */}
             <div ref={inspScrollRef} className="flex-1 overflow-y-auto p-6 lg:p-8" onClick={() => setSelectedInspiration(null)}>
-              <div className="columns-2 lg:columns-3 xl:columns-4 gap-4">
-                {inspirations.length > 0 ? inspirations.map((item, idx) => {
-                  const cardBg = isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length]
-                  return (
-                    <div key={item.id} onClick={(e) => { e.stopPropagation(); if (window.innerWidth < 1024) setMobileDetail({ type: 'inspiration', data: item }); else setSelectedInspiration(item) }}
-                      className="break-inside-avoid mb-4 overflow-hidden cursor-pointer group hover:-translate-y-1 transition-all"
-                      style={{ background: cardBg, border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
-                      <div className="relative overflow-hidden" style={{ padding: '8px', paddingBottom: 0 }}>
-                        <LazyImage src={item.url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-500"
-                          style={{ borderRadius: v('radius-md') }} />
+              {(() => {
+                if (inspirations.length === 0) return <div className="w-full text-center text-sm py-20" style={{ color: v('text-muted') }}>{searchQuery ? '未找到匹配的灵感' : '暂无灵感图片'}</div>
+                const cols = toMasonryColumns(inspirations.map((item, idx) => ({ item, idx })), masonryCols)
+                return (
+                  <div className="flex gap-4 items-start">
+                    {cols.map((col, ci) => (
+                      <div key={ci} className="flex-1 min-w-0 flex flex-col gap-4">
+                        {col.map(({ item, idx }) => {
+                          const cardBg = isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length]
+                          return (
+                            <div key={item.id} onClick={(e) => { e.stopPropagation(); if (window.innerWidth < 1024) setMobileDetail({ type: 'inspiration', data: item }); else setSelectedInspiration(item) }}
+                              className="overflow-hidden cursor-pointer group hover:-translate-y-1 transition-all"
+                              style={{ background: cardBg, border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
+                              <div className="relative overflow-hidden" style={{ padding: '8px', paddingBottom: 0 }}>
+                                <LazyImage src={item.url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-500"
+                                  style={{ borderRadius: v('radius-md') }} />
+                              </div>
+                              <div className="p-3">
+                                <p className="text-xs line-clamp-2 leading-relaxed font-medium" style={{ color: v('text-secondary') }}>
+                                  {item.prompt || '无提示词'}
+                                </p>
+                                <div className="mt-2 flex items-center justify-between">
+                                  <span className="text-[10px] px-2 py-0.5 font-medium" style={{
+                                    background: v('hover'),
+                                    color: v('text-muted'),
+                                    borderRadius: '6px',
+                                  }}>{item.model || 'AI 创作'}</span>
+                                  <button className="text-[10px] font-bold text-blue-500 hover:text-blue-600 transition-colors"
+                                    onClick={(e) => { e.stopPropagation(); applyPrompt(item.prompt) }}>使用 →</button>
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
-                      <div className="p-3">
-                        <p className="text-xs line-clamp-2 leading-relaxed font-medium" style={{ color: v('text-secondary') }}>
-                          {item.prompt || '无提示词'}
-                        </p>
-                        <div className="mt-2 flex items-center justify-between">
-                          <span className="text-[10px] px-2 py-0.5 font-medium" style={{
-                            background: v('hover'),
-                            color: v('text-muted'),
-                            borderRadius: '6px',
-                          }}>{item.model || 'AI 创作'}</span>
-                          <button className="text-[10px] font-bold text-blue-500 hover:text-blue-600 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); applyPrompt(item.prompt) }}>使用 →</button>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                }) : <div className="col-span-4 text-center text-sm py-20" style={{ color: v('text-muted') }}>{searchQuery ? '未找到匹配的灵感' : '暂无灵感图片'}</div>}
-              </div>
+                    ))}
+                  </div>
+                )
+              })()}
               {inspLoading && (
                 <div className="flex justify-center py-6">
                   <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
