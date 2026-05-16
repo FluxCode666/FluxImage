@@ -11,7 +11,7 @@ interface UserInfo {
   creation_count: number; checkin_count: number; can_checkin: boolean; role: string
 }
 interface Creation {
-  id: number; prompt: string; image_url: string; image_key?: string; model: string; size: string; title?: string | null; category?: string | null; created_at: string
+  id: number; prompt: string; image_url: string; image_key?: string; model: string; size: string; title?: string | null; category?: string | null; reference_image_urls?: string[]; created_at: string
 }
 interface GenerationTask {
   id: number; status: string; prompt: string | null; model: string | null; size: string | null; quantity: number; created_at: string
@@ -187,12 +187,6 @@ export default function HomePage() {
   const [MODELS, setMODELS] = useState<ModelOption[]>([])
   const [allowCustomApi, setAllowCustomApi] = useState(true)
   const [showLogoutMenu, setShowLogoutMenu] = useState(false)
-  const [uiVersion, setUiVersion] = useState<'new' | 'classic'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('uiVersion') as 'new' | 'classic') || 'new'
-    }
-    return 'new'
-  })
   const [announcement, setAnnouncement] = useState<string | null>(null)
   const [showNotice, setShowNotice] = useState(false)
   const [aspectRatio, setAspectRatio] = useState('1:1')
@@ -621,6 +615,31 @@ export default function HomePage() {
     { id: 'recharge', icon: <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>, title: '充值', onClick: () => openRecharge() },
   ]
 
+  function renderReferenceImages(urls?: string[]) {
+    const referenceUrls = (urls || []).filter(Boolean)
+    if (referenceUrls.length === 0) return null
+
+    return (
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>参考图</label>
+        <div className="flex flex-wrap gap-2">
+          {referenceUrls.map((url, i) => (
+            <button
+              key={`${url}-${i}`}
+              type="button"
+              aria-label={`查看参考图 ${i + 1}`}
+              onClick={() => setLightboxUrl(url)}
+              className="w-14 h-14 sm:w-16 sm:h-16 shrink-0 overflow-hidden cursor-zoom-in transition-transform active:scale-95"
+              style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), background: v('tag-bg') }}
+            >
+              <img src={url} alt={`参考图 ${i + 1}`} className="w-full h-full object-cover" />
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   if (!user) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: v('bg') }}>
       <div className="animate-pulse" style={{ color: v('text-muted') }}>加载中...</div>
@@ -666,20 +685,6 @@ export default function HomePage() {
               <button onClick={() => { setShowUserCenter(true); setShowLogoutMenu(false); fetchApiKeyStatus() }}
                 className="w-full px-4 py-3 text-xs text-left hover:bg-blue-500/10 text-blue-500">👤 个人中心</button>
               <div style={{ borderTop: `1px solid ${v('border')}`, padding: '8px 12px' }}>
-                <p className="text-[10px] font-medium mb-2" style={{ color: v('text-muted') }}>界面版本</p>
-                <div className="flex gap-1">
-                  {([['new', '✨', '新版'], ['classic', '📋', '经典']] as const).map(([ver, icon, label]) => (
-                    <button key={ver} onClick={() => { setUiVersion(ver as 'new' | 'classic'); localStorage.setItem('uiVersion', ver) }}
-                      className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-lg text-[10px] transition-all"
-                      style={uiVersion === ver
-                        ? { background: v('active-bg'), color: v('active-color'), fontWeight: 600 }
-                        : { color: v('text-muted') }}>
-                      <span className="text-sm">{icon}</span>{label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ borderTop: `1px solid ${v('border')}`, padding: '8px 12px' }}>
                 <p className="text-[10px] font-medium mb-2" style={{ color: v('text-muted') }}>主题设置</p>
                 <div className="flex gap-1">
                   {([['system', '💻', '系统'], ['light', '☀️', '明亮'], ['dark', '🌙', '暗黑']] as const).map(([mode, icon, label]) => (
@@ -702,7 +707,6 @@ export default function HomePage() {
 
       {/* ===== 主内容区 ===== */}
       {currentPage === 'create' ? (
-        uiVersion === 'new' ? (
           /* ===== 新版创作页：居中输入框 + 作品列表 ===== */
           <div className="flex-1 overflow-y-auto transition-all duration-300">
             {/* 顶部居中输入区域 */}
@@ -913,376 +917,6 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-        ) : (
-        <>
-          {/* 经典创作页：控制面板 */}
-          <div className="w-full lg:w-96 flex flex-col shrink-0 transition-all duration-300"
-            style={{ background: v('panel'), borderRadius: v('panel-radius'), boxShadow: v('panel-shadow') }}>
-            <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-thin pt-16 lg:pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-xl font-extrabold bg-gradient-to-r from-blue-500 to-emerald-500 bg-clip-text text-transparent break-words">{siteName}</h1>
-                  <p className="text-[10px] tracking-widest uppercase break-words" style={{ color: v('text-muted') }}>{siteSubtitle}</p>
-                </div>
-                <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-600 border border-green-500/20 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>在线
-                </span>
-              </div>
-
-              {/* 模型选择 */}
-              <div>
-                <label className="text-xs font-bold mb-2 block uppercase pl-1" style={{ color: v('text-muted') }}>AI Model</label>
-                <div className="relative" ref={modelDropdownRef}>
-                  <button onClick={() => setModelOpen(!modelOpen)}
-                    className="w-full px-4 py-3 flex items-center justify-between hover:border-blue-500/50 transition-all text-left"
-                    style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md') }}>
-                    <div className="flex items-center space-x-3">
-                      <span className="text-2xl">{currentModel.icon}</span>
-                      <span className="font-medium text-sm">{currentModel.name}</span>
-                    </div>
-                    <svg className={`w-3 h-3 transition-transform ${modelOpen ? 'rotate-180' : ''}`} style={{ color: v('text-muted') }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
-                  </button>
-                  {modelOpen && (
-                    <div className="absolute top-full left-0 right-0 mt-2 shadow-2xl z-30 overflow-hidden p-1"
-                      style={{ background: v('modal-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-lg') }}>
-                      {MODELS.map(m => (
-                        <button key={m.id} onClick={() => { setModel(m.id); setModelOpen(false) }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-all ${model === m.id ? 'bg-blue-500/10 text-blue-500' : 'hover:bg-blue-500/5'}`}
-                          style={{ borderRadius: v('radius-sm') }}>
-                          <span className="text-xl">{m.icon}</span>
-                          <div>
-                            <div className="text-sm font-medium">{m.name}</div>
-                            <div className="text-[10px]" style={{ color: v('text-muted') }}>{m.desc}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 参考图 */}
-              <div className="p-3 border border-dashed hover:border-blue-500/50 transition-all" style={{ borderColor: v('border'), borderRadius: v('radius-md') }}>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-[10px] font-bold flex items-center gap-2" style={{ color: v('text-muted') }}>🖼️ 参考图</label>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/10 text-blue-500">Max 3</span>
-                </div>
-                {previewUrls.length > 0 && (
-                  <div className="grid grid-cols-3 gap-2 mb-2">
-                    {previewUrls.map((url, i) => (
-                      <div key={i} className="relative aspect-square overflow-hidden" style={{ border: `1px solid ${v('border')}`, borderRadius: v('radius-sm') }}>
-                        <img src={url} alt="" className="w-full h-full object-cover" />
-                        <button onClick={() => removeFile(i)} className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center">×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} className="hidden" multiple />
-                <button onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-10 hover:bg-blue-500/10 text-xs flex items-center justify-center gap-2 transition-all"
-                  style={{ color: v('text-muted'), borderRadius: v('radius-sm') }}>＋ 上传</button>
-              </div>
-
-              {/* Prompt */}
-              <div className="flex flex-col" style={{ height: 140 }}>
-                <label className="text-xs font-bold mb-1 block uppercase pl-1 flex justify-between" style={{ color: v('text-muted') }}>
-                  <span>Prompt</span>
-                  <span className="text-blue-500 cursor-pointer normal-case" onClick={() => setPrompt('')}>清空</span>
-                </label>
-                <div className="relative flex-1">
-                  <textarea value={prompt} onChange={e => setPrompt(e.target.value)}
-                    className="w-full h-full p-3 resize-none text-sm leading-relaxed focus:outline-none focus:border-blue-500 transition-colors"
-                    style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-md') }}
-                    placeholder="描述你想生成的画面..." maxLength={effectivePromptMaxLength} />
-                  <div className="absolute bottom-2 right-3 text-[10px]" style={{ color: v('text-muted') }}>{prompt.length}/{effectivePromptMaxLength}</div>
-                </div>
-              </div>
-
-              {/* 高级设置 */}
-              <div>
-                <button onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="w-full flex items-center justify-between text-xs font-medium py-2 hover:text-blue-500 transition-colors" style={{ color: v('text-muted') }}>
-                  <span>⚙ 高级设置</span>
-                  <svg className={`w-3 h-3 transition-transform ${showAdvanced ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/></svg>
-                </button>
-                {showAdvanced && (
-                  <div className="mt-3 space-y-3 pl-1">
-                    <div>
-                      <label className="text-[10px] mb-1 block" style={{ color: v('text-muted') }}>生成数量</label>
-                      <select value={quantity} onChange={e => setQuantity(e.target.value)}
-                        className="w-full px-3 py-2 text-xs outline-none"
-                        style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm') }}>
-                        <option value="1">1 张</option><option value="2">2 张</option><option value="3">3 张</option><option value="4">4 张</option>
-                      </select>
-                    </div>
-                    {model.includes('nano-banana-2') && (
-                      <div>
-                        <label className="text-[10px] mb-1 block flex items-center gap-1" style={{ color: v('text-muted') }}>
-                          画面比例 <span className="text-blue-500 text-[9px] border border-blue-500/30 px-1 rounded">2.0 模型专属</span>
-                        </label>
-                        <select value={aspectRatio} onChange={e => setAspectRatio(e.target.value)}
-                          className="w-full px-3 py-2 text-xs outline-none"
-                          style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm') }}>
-                          <option value="1:1">1:1 (正方形)</option><option value="3:4">3:4 (手机竖屏)</option><option value="4:3">4:3 (iPad/老照片)</option>
-                          <option value="16:9">16:9 (电脑横屏)</option><option value="9:16">9:16 (抖音/全屏)</option><option value="21:9">21:9 (电影宽屏)</option>
-                        </select>
-                      </div>
-                    )}
-                    {(model === 'gpt-image-2' || model === 'gpt-4o-image') && (
-                      <div>
-                        <label className="text-[10px] mb-1 block flex items-center gap-1" style={{ color: v('text-muted') }}>
-                          图片尺寸 <span className="text-purple-500 text-[9px] border border-purple-500/30 px-1 rounded">GPT 模型</span>
-                        </label>
-                        <select value={imageSize} onChange={e => setImageSize(e.target.value)}
-                          className="w-full px-3 py-2 text-xs outline-none"
-                          style={{ background: v('input-bg'), border: `1px solid ${v('border')}`, color: v('text'), borderRadius: v('radius-sm') }}>
-                          <option value="auto">自动</option>
-                          <option value="1024x1024">方形 1:1</option>
-                          <option value="1024x1536">竖版 3:4</option>
-                          <option value="1024x1792">故事版 9:16</option>
-                          <option value="1536x1024">横版 4:3</option>
-                          <option value="1792x1024">宽屏 16:9</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* 移动端：我的作品 */}
-              <div className="lg:hidden mt-2">
-                <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-bold">我的作品</h2>
-                  <span className="text-[10px]" style={{ color: v('text-muted') }}>积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span></span>
-                </div>
-                {(() => {
-                  const allItems: { type: 'task' | 'work'; task?: any; work?: Creation; idx: number }[] = [
-                    ...activeTasks.map((t, i) => ({ type: 'task' as const, task: t, idx: i })),
-                    ...works.map((w, i) => ({ type: 'work' as const, work: w, idx: i }))
-                  ]
-                  if (allItems.length === 0) return <div className="w-full text-center text-xs py-6" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
-                  const cols = toMasonryColumns(allItems, 2)
-                  return (
-                    <div className="flex gap-3 items-start">
-                      {cols.map((col, ci) => (
-                        <div key={ci} className="flex-1 min-w-0 flex flex-col gap-3">
-                          {col.map(item => {
-                            if (item.type === 'task') return <TaskCard key={`mtask-${item.task.id}`} task={item.task} isDark={isDark} />
-                            const work = item.work!; const idx = item.idx
-                            return (
-                              <div key={work.id} className="overflow-hidden group"
-                                style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
-                                <div className="relative overflow-hidden cursor-pointer" onClick={() => setLightboxUrl(work.image_url)}>
-                                  <LazyImage src={work.image_url} alt="" className="w-full h-auto block"
-                                    style={{ borderRadius: v('radius-md'), margin: '6px', width: 'calc(100% - 12px)' }} />
-                                </div>
-                                <div className="px-2 pb-2 pt-1 flex items-center justify-between">
-                                  <span className="text-[9px] truncate max-w-[40%]" style={{ color: v('text-muted') }}>{work.model || ''}</span>
-                                  <div className="flex items-center gap-0.5">
-                                    <button title="下载" onClick={() => handleDownloadImage(work.image_url)}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                    </button>
-                                    <button title="复制提示词" onClick={() => handleCopyPrompt(work.prompt)}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                                    </button>
-                                    <button title="用作参考图" onClick={() => useAsReference(work.image_url, work.image_key)}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                                    </button>
-                                    <button title="分享到社区" onClick={() => handleShareWork(work.id)}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors" style={{ color: v('text-muted') }}>
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
-                                    </button>
-                                    <button title="删除" onClick={() => handleDeleteWork(work.id)}
-                                      className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-red-400/60">
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  )
-                })()}
-              </div>
-            </div>
-            <div className="p-6" style={{ borderTop: `1px solid ${v('border')}` }}>
-              <button onClick={handleGenerate} disabled={loading}
-                className="w-full py-4 px-6 text-white font-bold flex items-center justify-center gap-3 relative overflow-hidden transition-transform active:scale-95 disabled:opacity-50"
-                style={{ background: v('btn-primary'), borderRadius: v('radius-md'), boxShadow: v('btn-primary-shadow') }}>
-                <span>{loading ? '生成中...' : '立即生成'}</span>
-                {loading ? <span className="animate-spin">⏳</span> : <span className="animate-pulse">💎</span>}
-              </button>
-              <p className="text-[10px] text-center mt-3" style={{ color: v('text-muted') }}>⚡ 预计耗时 10-30 秒</p>
-            </div>
-          </div>
-
-          {/* 创作页：我的作品（透明背景） */}
-          <div className="hidden lg:flex flex-1 flex-col h-full overflow-hidden transition-all duration-300" style={{ minWidth: 0 }}>
-            <div className="p-6 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
-              <h2 className="text-lg font-bold">我的作品</h2>
-              <div className="text-xs" style={{ color: v('text-muted') }}>
-                积分: <span className="text-blue-500 font-bold">{user.drawing_points}</span>
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6 lg:p-10" onClick={() => setSelectedWork(null)}>
-              {(() => {
-                const classicCols = masonryCols >= 6 ? 6 : masonryCols >= 4 ? 4 : 3
-                const allItems: { type: 'task' | 'work'; task?: any; work?: Creation; idx: number }[] = [
-                  ...activeTasks.map((t, i) => ({ type: 'task' as const, task: t, idx: i })),
-                  ...works.map((w, i) => ({ type: 'work' as const, work: w, idx: i }))
-                ]
-                if (allItems.length === 0) return <div className="w-full text-center text-xs py-10" style={{ color: v('text-muted') }}>暂无作品，快去创作吧！</div>
-                const cols = toMasonryColumns(allItems, classicCols)
-                return (
-                  <div className="flex gap-4 items-start">
-                    {cols.map((col, ci) => (
-                      <div key={ci} className="flex-1 min-w-0 flex flex-col gap-4">
-                        {col.map(item => {
-                          if (item.type === 'task') return <TaskCard key={`task-${item.task.id}`} task={item.task} isDark={isDark} />
-                          const work = item.work!; const idx = item.idx
-                          return (
-                            <div key={work.id} className="overflow-hidden group hover:-translate-y-1 transition-all"
-                              style={{ background: isDark ? v('card') : PASTEL_COLORS[idx % PASTEL_COLORS.length], border: isDark ? `1px solid ${v('border')}` : 'none', borderRadius: v('radius-lg') }}>
-                              <div className="relative overflow-hidden cursor-pointer" onClick={(e) => { e.stopPropagation(); setSelectedWork(work) }}>
-                                <LazyImage src={work.image_url} alt="" className="w-full h-auto block group-hover:scale-105 transition-transform duration-700"
-                                  style={{ borderRadius: v('radius-md'), margin: '8px', width: 'calc(100% - 16px)' }} />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-end p-3 pointer-events-none">
-                                  <p className="text-xs text-gray-100 line-clamp-2 leading-relaxed">{work.prompt || '无提示词'}</p>
-                                </div>
-                              </div>
-                              <div className="px-2 pb-2 pt-1 flex items-center justify-between">
-                                <span className="text-[10px] truncate max-w-[50%]" style={{ color: v('text-muted') }}>{work.model || ''}</span>
-                                <div className="flex items-center gap-0.5">
-                                  <button title="下载" onClick={(e) => { e.stopPropagation(); handleDownloadImage(work.image_url) }}
-                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                                  </button>
-                                  <button title="复制提示词" onClick={(e) => { e.stopPropagation(); handleCopyPrompt(work.prompt) }}
-                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-blue-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                                  </button>
-                                  <button title="用作参考图" onClick={(e) => { e.stopPropagation(); useAsReference(work.image_url, work.image_key) }}
-                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-purple-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-                                  </button>
-                                  <button title="分享到社区" onClick={(e) => { e.stopPropagation(); handleShareWork(work.id) }}
-                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-green-500/10 transition-colors text-xs" style={{ color: v('text-muted') }}>
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
-                                  </button>
-                                  <button title="删除" onClick={(e) => { e.stopPropagation(); handleDeleteWork(work.id) }}
-                                    className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-500/10 transition-colors text-xs text-red-400/60 hover:text-red-400">
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-
-          {/* 作品详情面板（动画滑入/滑出） */}
-          <div className="hidden lg:flex flex-col shrink-0 h-full overflow-hidden"
-            style={{
-              width: selectedWork ? '384px' : '0px',
-              minWidth: selectedWork ? '384px' : '0px',
-              opacity: selectedWork ? 1 : 0,
-              background: v('panel'),
-              borderRadius: v('panel-radius'),
-              boxShadow: selectedWork ? v('panel-shadow') : 'none',
-              transition: 'width 0.35s cubic-bezier(0.4,0,0.2,1), min-width 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease',
-              pointerEvents: selectedWork ? 'auto' : 'none',
-            }}>
-            <div className="w-96 flex flex-col h-full">
-              <div className="p-5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
-                <h3 className="text-sm font-bold">作品详情</h3>
-                <button onClick={() => setSelectedWork(null)}
-                  className="w-7 h-7 flex items-center justify-center hover:bg-black/5 transition-colors" style={{ borderRadius: '8px', color: v('text-muted') }}>×</button>
-              </div>
-              {selectedWork && (
-                <div className="flex-1 overflow-y-auto p-5 space-y-5">
-                  <div className="overflow-hidden" style={{ borderRadius: v('radius-md'), border: `1px solid ${v('border')}` }}>
-                    <img src={selectedWork.image_url} alt="" className="w-full h-auto cursor-zoom-in" onClick={() => setLightboxUrl(selectedWork.image_url)} />
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>提示词</label>
-                      <div className="p-3 text-sm leading-relaxed" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
-                        {selectedWork.prompt || '无提示词'}
-                      </div>
-                    </div>
-                    <div className="flex gap-4">
-                      <div className="flex-1">
-                        <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>模型</label>
-                        <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.model || '-'}</div>
-                      </div>
-                      <div className="flex-1">
-                        <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>尺寸</label>
-                        <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.size || '-'}</div>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>创建时间</label>
-                      <div className="p-2 text-xs" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>{selectedWork.created_at ? new Date(selectedWork.created_at).toLocaleString() : '-'}</div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>操作</label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => { useAsReference(selectedWork.image_url, selectedWork.image_key); setSelectedWork(null) }}
-                          className="col-span-2 py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
-                          style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', borderRadius: v('radius-md') }}>
-                          🖼️ 用作参考图
-                        </button>
-                        <button onClick={() => applyPrompt(selectedWork.prompt)}
-                          className="py-2.5 text-white text-xs font-bold transition-transform active:scale-95"
-                          style={{ background: v('btn-primary'), borderRadius: v('radius-md') }}>
-                          使用提示词
-                        </button>
-                        <button onClick={() => handleCopyPrompt(selectedWork.prompt)}
-                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
-                          style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
-                          📋 复制提示词
-                        </button>
-                        <button onClick={() => handleDownloadImage(selectedWork.image_url)}
-                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
-                          style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
-                          ⬇️ 下载图片
-                        </button>
-                        <button onClick={() => handleShareWork(selectedWork.id)}
-                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80 text-green-500"
-                          style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: v('radius-md') }}>
-                          🌐 分享社区
-                        </button>
-                        <button onClick={() => setLightboxUrl(selectedWork.image_url)}
-                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80"
-                          style={{ background: v('tag-bg'), border: `1px solid ${v('border')}`, borderRadius: v('radius-md'), color: v('text-secondary') }}>
-                          🔍 查看大图
-                        </button>
-                        <button onClick={() => { handleDeleteWork(selectedWork.id); setSelectedWork(null) }}
-                          className="py-2.5 text-xs font-bold transition-all hover:opacity-80 text-red-400"
-                          style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: v('radius-md') }}>
-                          🗑 删除
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </>
-        )
       ) : (
         /* ===== 灵感页 ===== */
         <>
@@ -1525,24 +1159,25 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ===== 新版UI - PC端作品详情弹窗 ===== */}
-      {uiVersion === 'new' && selectedWork && (
+      {/* ===== PC端作品详情弹窗 ===== */}
+      {selectedWork && (
         <div className="hidden lg:flex fixed inset-0 z-[100] items-center justify-center" style={{ background: v('overlay') }} onClick={() => setSelectedWork(null)}>
-          <div className="w-full max-w-3xl h-[85vh] flex overflow-hidden mx-4 animate-fade-in"
+          <div className="w-full max-w-6xl h-[85vh] flex overflow-hidden mx-4 animate-fade-in"
             style={{ background: v('panel'), borderRadius: v('radius-lg'), boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}
             onClick={(e) => e.stopPropagation()}>
             {/* 左侧图片 - 高度撑满弹窗 */}
-            <div className="w-1/2 h-full overflow-hidden shrink-0" style={{ borderRight: `1px solid ${v('border')}` }}>
+            <div className="basis-3/5 h-full overflow-hidden shrink-0" style={{ borderRight: `1px solid ${v('border')}` }}>
               <img src={selectedWork.image_url} alt="" className="w-full h-full object-cover cursor-zoom-in" onClick={() => setLightboxUrl(selectedWork.image_url)} />
             </div>
             {/* 右侧作品详情 */}
-            <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <div className="basis-2/5 flex flex-col min-w-0 min-h-0">
               <div className="p-5 flex items-center justify-between shrink-0" style={{ borderBottom: `1px solid ${v('border')}` }}>
                 <h3 className="text-sm font-bold">作品详情</h3>
                 <button onClick={() => setSelectedWork(null)}
                   className="w-7 h-7 flex items-center justify-center hover:bg-black/5 transition-colors" style={{ borderRadius: '8px', color: v('text-muted') }}>×</button>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {renderReferenceImages(selectedWork.reference_image_urls)}
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>提示词</label>
                   <div className="p-3 text-sm leading-relaxed" style={{ background: v('tag-bg'), borderRadius: v('radius-md') }}>
@@ -1624,6 +1259,11 @@ export default function HomePage() {
                   onClick={() => setLightboxUrl(mobileDetail.type === 'work' ? (mobileDetail.data as Creation).image_url : (mobileDetail.data as InspirationItem).url)}
                 />
               </div>
+              {mobileDetail.type === 'work' && ((mobileDetail.data as Creation).reference_image_urls?.length || 0) > 0 && (
+                <div className="mb-4">
+                  {renderReferenceImages((mobileDetail.data as Creation).reference_image_urls)}
+                </div>
+              )}
               {/* 提示词 */}
               <div className="mb-4">
                 <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: v('text-muted') }}>提示词</label>
@@ -1785,22 +1425,6 @@ export default function HomePage() {
 
             {/* 设置区块 */}
             <div className="mx-4 mb-4 p-4" style={{ background: v('tag-bg'), borderRadius: '16px' }}>
-              {/* 界面版本 */}
-              <p className="text-[11px] font-semibold mb-2.5" style={{ color: v('text-muted') }}>界面版本</p>
-              <div className="flex gap-2 mb-4">
-                {([['new', '✨', '新版'], ['classic', '📋', '经典']] as const).map(([ver, icon, label]) => (
-                  <button key={ver} onClick={() => { setUiVersion(ver as 'new' | 'classic'); localStorage.setItem('uiVersion', ver) }}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-medium transition-all"
-                    style={{
-                      borderRadius: '10px',
-                      ...(uiVersion === ver
-                        ? { background: v('active-bg'), color: v('active-color'), fontWeight: 700, boxShadow: '0 2px 8px rgba(59,130,246,0.15)' }
-                        : { background: v('panel'), color: v('text-muted'), border: `1px solid ${v('border')}` }),
-                    }}>
-                    <span>{icon}</span>{label}
-                  </button>
-                ))}
-              </div>
               {/* 主题 */}
               <p className="text-[11px] font-semibold mb-2.5" style={{ color: v('text-muted') }}>主题</p>
               <div className="flex gap-2">

@@ -3,6 +3,22 @@ import { authenticateRequest } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { buildPublicUrl, fileExists } from '@/lib/storage-service'
 
+function parseReferenceImages(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed.filter((item): item is string => typeof item === 'string' && item.length > 0)
+  } catch {}
+  return [raw]
+}
+
+async function buildReferenceImageUrls(raw: string | null): Promise<string[]> {
+  const keys = parseReferenceImages(raw)
+  const checks = await Promise.all(keys.map(key => fileExists(key)))
+  const validKeys = keys.filter((_, i) => checks[i])
+  return Promise.all(validKeys.map(key => buildPublicUrl(key)))
+}
+
 export async function GET(req: NextRequest) {
   const authResult = authenticateRequest(req)
   if (authResult instanceof NextResponse) return authResult
@@ -27,6 +43,7 @@ export async function GET(req: NextRequest) {
       size: r.size,
       title: r.title,
       category: r.category,
+      reference_image_urls: await buildReferenceImageUrls(r.referenceImages),
       created_at: r.createdAt.toISOString(),
     })))
     return NextResponse.json({ success: true, data })

@@ -10,6 +10,15 @@ type ApiKeyInfo =
   | { type: 'user'; key: string; baseUrl: string; shouldDeductPoints: false }
   | { type: 'providers'; providers: ProviderInfo[]; shouldDeductPoints: true }
 
+function getReferenceImageExtension(file: File): string {
+  const fromName = file.name.match(/\.(png|jpe?g|webp|gif)$/i)?.[1]?.toLowerCase()
+  if (fromName) return fromName === 'jpeg' ? 'jpg' : fromName
+  if (file.type === 'image/jpeg') return 'jpg'
+  if (file.type === 'image/webp') return 'webp'
+  if (file.type === 'image/gif') return 'gif'
+  return 'png'
+}
+
 // 后台异步执行图生图任务（fire-and-forget）
 async function executeEditTask(
   taskId: number,
@@ -21,6 +30,7 @@ async function executeEditTask(
   targetWidth: number | null,
   targetHeight: number | null,
   apiKeyInfo: ApiKeyInfo,
+  referenceImages: string[],
 ) {
   try {
     await prisma.generationTask.update({ where: { id: taskId }, data: { status: 'processing' } })
@@ -71,7 +81,17 @@ async function executeEditTask(
     }
 
     const creation = await prisma.creation.create({
-      data: { userId, prompt, imageUrl: storedKey, model: model || null, size: sizeString, title: titleCategory.title, category: titleCategory.category, createdAt: new Date() },
+      data: {
+        userId,
+        prompt,
+        imageUrl: storedKey,
+        model: model || null,
+        size: sizeString,
+        title: titleCategory.title,
+        category: titleCategory.category,
+        referenceImages: referenceImages.length > 0 ? JSON.stringify(referenceImages) : null,
+        createdAt: new Date(),
+      },
     })
 
     // 扣积分
@@ -90,7 +110,8 @@ async function executeEditTask(
 
     const generatedImage = {
       url: storedKey, prompt, model: model || null, size: sizeString,
-      id: creation.id, createdAt: creation.createdAt.toISOString(),
+      id: creation.id, referenceImages,
+      createdAt: creation.createdAt.toISOString(),
     }
 
     await prisma.generationTask.update({
@@ -131,14 +152,21 @@ export async function POST(req: NextRequest) {
     // 收集图片 buffer 和文件名
     const imageBuffers: Buffer[] = []
     const imageNames: string[] = []
-    for (const f of imageFiles) {
-      imageBuffers.push(Buffer.from(await f.arrayBuffer()))
+    const referenceImages: string[] = []
+    for (let i = 0; i < imageFiles.length; i++) {
+      const f = imageFiles[i]
+      const buffer = Buffer.from(await f.arrayBuffer())
+      imageBuffers.push(buffer)
       imageNames.push(f.name)
+      const ext = getReferenceImageExtension(f)
+      const referenceKey = `references/${Date.now()}-${userId}-${i}.${ext}`
+      referenceImages.push(await uploadBuffer(buffer, referenceKey))
     }
     if (imageKeys.length > 0) {
       const provider = await getStorageProvider()
       for (const key of imageKeys) {
         if (key) {
+          referenceImages.push(key)
           imageBuffers.push(await provider.downloadToBuffer(key))
           imageNames.push(key.split('/').pop() || 'reference.png')
         }
@@ -196,7 +224,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Fire-and-forget: 后台异步执行，不 await
-    executeEditTask(task.id, userId, prompt, model, imageBuffers, imageNames, targetWidth, targetHeight, apiKeyInfo)
+    executeEditTask(task.id, userId, prompt, model, imageBuffers, imageNames, targetWidth, targetHeight, apiKeyInfo, referenceImages)
 
     return NextResponse.json({
       success: true,

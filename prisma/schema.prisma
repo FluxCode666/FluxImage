@@ -38,6 +38,7 @@ model Creation {
   size      String?  @db.VarChar(255)
   title     String?  @db.VarChar(100)
   category  String?  @db.VarChar(50)
+  referenceImages String? @map("reference_images") @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
